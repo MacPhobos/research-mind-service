@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "mcp-vector-search": {
+      "type": "stdio",
+      "command": "mcp-vector-search",
+      "args": [
+        "mcp"
+      ],
+      "env": {
+        "MCP_ENABLE_FILE_WATCHING": "true"
+      }
+    }
+  }
+}

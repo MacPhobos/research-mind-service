@@ -1,0 +1,15 @@
+# MCP Vector Search index directory
+.mcp-vector-search/
+.venv
+/.venv/
+/.claude/
+/.claude-mpm/
+/.idea/
+/.mcp-browser/
+/.mcp-vector-search/
+/.claude/
+/.claude-mpm/
+/.idea/
+/.mcp-browser/
+/.mcp-vector-search/
+/.venv/
