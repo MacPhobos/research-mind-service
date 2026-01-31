@@ -7,13 +7,18 @@ from app.routes import health, api
 
 class Settings(BaseSettings):
     SERVICE_ENV: str = "development"
+    SERVICE_HOST: str = "0.0.0.0"
+    SERVICE_PORT: int = 15010
     DATABASE_URL: str = (
         "postgresql://postgres:devpass123@localhost:5432/research_mind_db"
     )
     CORS_ORIGINS: str = "http://localhost:15000"
+    SECRET_KEY: str = "dev-secret-change-in-production"
+    ALGORITHM: str = "HS256"
 
     class Config:
         env_file = ".env"
+        extra = "ignore"
 
 
 settings = Settings()
