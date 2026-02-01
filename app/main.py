@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse
 from app.core.config import settings
 from app.db.session import create_all_tables
 from app.routes import health, api
+from app.routes.indexing import router as indexing_router
 from app.routes.sessions import router as sessions_router
 
 logger = logging.getLogger(__name__)
@@ -157,6 +158,9 @@ app.include_router(api.router, prefix="/api/v1")
 
 # Session management routes (already prefixed with /api/v1/sessions)
 app.include_router(sessions_router)
+
+# Indexing routes (prefixed with /api/v1/workspaces)
+app.include_router(indexing_router)
 
 
 # Additional health endpoint under API prefix for consistency
