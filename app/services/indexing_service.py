@@ -14,6 +14,7 @@ from app.core.workspace_indexer import (
     WorkspaceIndexer,
     WorkspaceNotFoundError,
 )
+from app.sandbox.path_validator import PathValidator
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,24 @@ class IndexingService:
             IndexingTimeoutError: If a subprocess exceeds its timeout.
         """
         path = Path(workspace_path)
+
+        # Security: validate workspace path before subprocess invocation
+        if settings.path_validator_enabled:
+            workspace_root = Path(settings.workspace_root).resolve()
+            validator = PathValidator(workspace_root)
+            if not validator.validate_workspace_for_subprocess(workspace_path):
+                logger.warning(
+                    "Path validation failed for workspace: %s", workspace_path
+                )
+                return IndexingResult(
+                    success=False,
+                    elapsed_seconds=0.0,
+                    stdout="",
+                    stderr=f"Path validation failed: {workspace_path}",
+                    command=["mcp-vector-search", "init", "--force"],
+                    return_code=1,
+                )
+
         indexer = WorkspaceIndexer(path)
 
         init_timeout = settings.subprocess_timeout_init

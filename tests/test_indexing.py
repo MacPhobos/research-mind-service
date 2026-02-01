@@ -70,6 +70,22 @@ def _make_completed_process(returncode: int = 0, stdout: str = "", stderr: str =
 
 
 class TestIndexWorkspace:
+    """Unit tests for IndexingService with path validation disabled.
+
+    These tests use tmp_path which is outside the configured workspace_root,
+    so we disable path_validator_enabled for the duration of each test.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _disable_path_validator(self):
+        """Disable path validation so tmp_path workspaces are accepted."""
+        from app.core.config import settings
+
+        original = settings.path_validator_enabled
+        object.__setattr__(settings, "path_validator_enabled", False)
+        yield
+        object.__setattr__(settings, "path_validator_enabled", original)
+
     @patch("app.core.workspace_indexer.subprocess.run")
     def test_index_workspace_success(self, mock_run, tmp_path: Path):
         """Both init and index succeed."""
@@ -188,14 +204,14 @@ def _create_session(client: TestClient, name: str = "Test Session") -> dict:
 class TestIndexEndpoints:
     def test_index_endpoint_session_not_found(self, client: TestClient):
         """POST /api/v1/workspaces/{id}/index returns 404 for unknown session."""
-        response = client.post("/api/v1/workspaces/nonexistent/index")
+        response = client.post("/api/v1/workspaces/00000000-0000-4000-a000-000000000000/index")
         assert response.status_code == 404
         data = response.json()
         assert data["detail"]["error"]["code"] == "SESSION_NOT_FOUND"
 
     def test_index_status_endpoint_session_not_found(self, client: TestClient):
         """GET /api/v1/workspaces/{id}/index/status returns 404 for unknown session."""
-        response = client.get("/api/v1/workspaces/nonexistent/index/status")
+        response = client.get("/api/v1/workspaces/00000000-0000-4000-a000-000000000000/index/status")
         assert response.status_code == 404
         data = response.json()
         assert data["detail"]["error"]["code"] == "SESSION_NOT_FOUND"

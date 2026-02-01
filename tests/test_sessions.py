@@ -148,7 +148,7 @@ class TestGetSession:
         assert data["name"] == "Fetched Session"
 
     def test_get_session_not_found(self, client: TestClient):
-        response = client.get("/api/v1/sessions/nonexistent-id")
+        response = client.get("/api/v1/sessions/00000000-0000-4000-a000-000000000000")
         assert response.status_code == 404
         data = response.json()
         assert data["detail"]["error"]["code"] == "SESSION_NOT_FOUND"
@@ -221,7 +221,7 @@ class TestDeleteSession:
         assert get_resp.status_code == 404
 
     def test_delete_session_not_found(self, client: TestClient):
-        response = client.delete("/api/v1/sessions/nonexistent-id")
+        response = client.delete("/api/v1/sessions/00000000-0000-4000-a000-000000000000")
         assert response.status_code == 404
 
 

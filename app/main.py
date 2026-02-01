@@ -17,6 +17,7 @@ from fastapi.responses import JSONResponse
 
 from app.core.config import settings
 from app.db.session import create_all_tables
+from app.middleware.session_validation import SessionValidationMiddleware
 from app.routes import health, api
 from app.routes.indexing import router as indexing_router
 from app.routes.sessions import router as sessions_router
@@ -108,6 +109,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.add_middleware(SessionValidationMiddleware)
 
 
 @app.middleware("http")
