@@ -9,7 +9,7 @@ install:
 	uv sync
 	@echo "✓ Dependencies installed"
 
-dev:
+run:
 	@echo "Starting service on port 15010..."
 	uv run uvicorn app.main:app --host 0.0.0.0 --port 15010 --reload
 
