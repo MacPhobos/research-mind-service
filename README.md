@@ -16,7 +16,7 @@ A FastAPI backend service for the research-mind project.
 
 3. **Run Service**
    ```bash
-   uv run uvicorn app.main:app --host 0.0.0.0 --port 15010 --reload
+   make dev
    ```
 
 4. **Test**
