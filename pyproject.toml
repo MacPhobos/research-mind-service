@@ -35,5 +35,10 @@ dev = [
     "ruff>=0.1.0",
 ]
 
+[tool.pytest.ini_options]
+markers = [
+    "integration: marks tests as integration tests (may require CLI tools)",
+]
+
 [tool.setuptools.packages]
 find = { where = ["."], include = ["app*"] }
