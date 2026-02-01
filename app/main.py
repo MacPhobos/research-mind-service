@@ -16,7 +16,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.core.config import settings
+from app.db.session import create_all_tables
 from app.routes import health, api
+from app.routes.sessions import router as sessions_router
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +54,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         settings.service_env,
         settings.port,
     )
+
+    # Ensure tables exist (dev convenience - production uses alembic)
+    if settings.service_env == "development":
+        try:
+            # Import models so Base.metadata knows about them
+            import app.models  # noqa: F401
+
+            create_all_tables()
+            logger.info("Database tables ensured (dev mode)")
+        except Exception:
+            logger.warning(
+                "Could not auto-create tables (database may not be available). "
+                "Use 'alembic upgrade head' to create tables."
+            )
 
     cli_version = _verify_mcp_cli()
     if cli_version:
@@ -138,6 +154,9 @@ app.include_router(health.router)
 
 # API v1 routes
 app.include_router(api.router, prefix="/api/v1")
+
+# Session management routes (already prefixed with /api/v1/sessions)
+app.include_router(sessions_router)
 
 
 # Additional health endpoint under API prefix for consistency

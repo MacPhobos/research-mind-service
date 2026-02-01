@@ -28,12 +28,15 @@ class Settings(BaseSettings):
     debug: bool = False
 
     # --- Database ---
+    # Use postgresql+psycopg:// dialect (psycopg v3 driver)
     database_url: str = (
-        "postgresql://postgres:password@localhost:5432/research_mind"
+        "postgresql+psycopg://postgres:password@localhost:5432/research_mind"
     )
 
     # --- Workspace ---
-    workspace_root: str = "/var/lib/research-mind/workspaces"
+    # Local development: ./workspaces
+    # Production: Override via WORKSPACE_ROOT env var to /var/lib/research-mind/workspaces
+    workspace_root: str = "./workspaces"
 
     # --- Subprocess Timeouts (seconds) ---
     subprocess_timeout_init: int = 30
