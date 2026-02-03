@@ -10,7 +10,6 @@ import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import httpx
 import pytest
 
 
@@ -165,119 +164,113 @@ def test_file_upload_default_filename(tmp_path: Path) -> None:
 
 
 # --- UrlRetriever Tests ---
+# Note: Comprehensive URL retriever tests are in tests/services/retrievers/test_url_retriever.py
+# These tests are kept for backward compatibility but use the new ExtractionPipeline mocking.
 
 
-def test_url_retriever_success(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Mocked HTTP GET returns content, written to content.md."""
+def test_url_retriever_success(tmp_path: Path) -> None:
+    """Mocked extraction returns content, written to content.md."""
+    from unittest.mock import AsyncMock, patch
+
+    from app.services.extractors.base import ExtractionResult
     from app.services.retrievers.url_retriever import UrlRetriever
 
-    # Mock httpx.Client
-    mock_response = MagicMock()
-    mock_response.content = b"<html>Page content</html>"
-    mock_response.status_code = 200
-    mock_response.headers = {"content-type": "text/html; charset=utf-8"}
-
-    mock_client = MagicMock()
-    mock_client.__enter__ = MagicMock(return_value=mock_client)
-    mock_client.__exit__ = MagicMock(return_value=False)
-    mock_client.get.return_value = mock_response
-
-    monkeypatch.setattr(httpx, "Client", MagicMock(return_value=mock_client))
-
-    retriever = UrlRetriever(timeout=10)
-    result = retriever.retrieve(
-        source="https://example.com/page",
-        target_dir=tmp_path,
+    mock_result = ExtractionResult(
+        content="# Page Content\n\nExtracted text.",
         title="Example Page",
+        word_count=4,
+        extraction_method="trafilatura",
+        extraction_time_ms=100.0,
     )
+
+    with patch.object(
+        UrlRetriever,
+        "_extract_async",
+        new_callable=AsyncMock,
+        return_value=mock_result,
+    ):
+        retriever = UrlRetriever(timeout=10)
+        result = retriever.retrieve(
+            source="https://example.com/page",
+            target_dir=tmp_path,
+            title="Example Page",
+        )
 
     assert result.success is True
-    assert result.size_bytes == len(b"<html>Page content</html>")
-    assert (tmp_path / "content.md").read_bytes() == b"<html>Page content</html>"
-    assert result.mime_type == "text/html"
+    assert result.size_bytes == len(mock_result.content.encode("utf-8"))
+    assert (tmp_path / "content.md").read_text() == mock_result.content
+    assert result.mime_type == "text/markdown"
 
 
-def test_url_retriever_http_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """HTTP 404 returns success=False with status code in error."""
+def test_url_retriever_http_error(tmp_path: Path) -> None:
+    """Network error returns success=False with error_type in metadata."""
+    from unittest.mock import AsyncMock, patch
+
+    from app.services.extractors.exceptions import NetworkError
     from app.services.retrievers.url_retriever import UrlRetriever
 
-    # Mock httpx.Client to raise HTTPStatusError
-    mock_response = MagicMock()
-    mock_response.status_code = 404
-    mock_response.reason_phrase = "Not Found"
-
-    mock_client = MagicMock()
-    mock_client.__enter__ = MagicMock(return_value=mock_client)
-    mock_client.__exit__ = MagicMock(return_value=False)
-    mock_client.get.side_effect = httpx.HTTPStatusError(
-        "Not Found",
-        request=MagicMock(),
-        response=mock_response,
-    )
-
-    monkeypatch.setattr(httpx, "Client", MagicMock(return_value=mock_client))
-
-    retriever = UrlRetriever(timeout=10)
-    result = retriever.retrieve(
-        source="https://example.com/notfound",
-        target_dir=tmp_path,
-    )
+    with patch.object(
+        UrlRetriever,
+        "_extract_async",
+        new_callable=AsyncMock,
+        side_effect=NetworkError("HTTP 404 from https://example.com/notfound: Not Found"),
+    ):
+        retriever = UrlRetriever(timeout=10)
+        result = retriever.retrieve(
+            source="https://example.com/notfound",
+            target_dir=tmp_path,
+        )
 
     assert result.success is False
-    assert "HTTP 404" in result.error_message
+    assert "404" in result.error_message
+    assert result.metadata["error_type"] == "network_error"
 
 
-def test_url_retriever_connection_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_url_retriever_connection_error(tmp_path: Path) -> None:
     """Connection failure returns success=False."""
+    from unittest.mock import AsyncMock, patch
+
+    from app.services.extractors.exceptions import NetworkError
     from app.services.retrievers.url_retriever import UrlRetriever
 
-    mock_client = MagicMock()
-    mock_client.__enter__ = MagicMock(return_value=mock_client)
-    mock_client.__exit__ = MagicMock(return_value=False)
-    mock_client.get.side_effect = httpx.RequestError("Connection failed")
-
-    monkeypatch.setattr(httpx, "Client", MagicMock(return_value=mock_client))
-
-    retriever = UrlRetriever(timeout=10)
-    result = retriever.retrieve(
-        source="https://unreachable.example.com",
-        target_dir=tmp_path,
-    )
+    with patch.object(
+        UrlRetriever,
+        "_extract_async",
+        new_callable=AsyncMock,
+        side_effect=NetworkError("Network error fetching https://unreachable.example.com: Connection refused"),
+    ):
+        retriever = UrlRetriever(timeout=10)
+        result = retriever.retrieve(
+            source="https://unreachable.example.com",
+            target_dir=tmp_path,
+        )
 
     assert result.success is False
-    assert "Request failed" in result.error_message
+    assert "Network error" in result.error_message
 
 
-def test_url_retriever_oversized_response(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Response exceeding max_url_response_bytes returns success=False."""
+def test_url_retriever_oversized_response(tmp_path: Path) -> None:
+    """Response exceeding max size returns success=False."""
+    from unittest.mock import AsyncMock, patch
+
+    from app.services.extractors.exceptions import ContentTooLargeError
     from app.services.retrievers.url_retriever import UrlRetriever
 
-    # Mock settings to use a small limit
-    mock_settings = MagicMock()
-    mock_settings.url_fetch_timeout = 10
-    mock_settings.max_url_response_bytes = 50
-    monkeypatch.setattr("app.services.retrievers.url_retriever.settings", mock_settings)
-
-    mock_response = MagicMock()
-    mock_response.content = b"x" * 100  # Exceeds limit
-    mock_response.status_code = 200
-    mock_response.headers = {"content-type": "text/html"}
-
-    mock_client = MagicMock()
-    mock_client.__enter__ = MagicMock(return_value=mock_client)
-    mock_client.__exit__ = MagicMock(return_value=False)
-    mock_client.get.return_value = mock_response
-
-    monkeypatch.setattr(httpx, "Client", MagicMock(return_value=mock_client))
-
-    retriever = UrlRetriever()
-    result = retriever.retrieve(
-        source="https://example.com/large",
-        target_dir=tmp_path,
-    )
+    with patch.object(
+        UrlRetriever,
+        "_extract_async",
+        new_callable=AsyncMock,
+        side_effect=ContentTooLargeError("Content size 100000000 exceeds maximum 52428800"),
+    ):
+        retriever = UrlRetriever()
+        result = retriever.retrieve(
+            source="https://example.com/large",
+            target_dir=tmp_path,
+        )
 
     assert result.success is False
-    assert "exceeds maximum size" in result.error_message
+    assert "exceeds maximum" in result.error_message
+    assert result.metadata["error_type"] == "content_too_large_error"
 
 
 # --- GitRepoRetriever Tests ---

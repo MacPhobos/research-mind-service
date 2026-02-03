@@ -50,6 +50,10 @@ class Settings(BaseSettings):
     max_url_response_bytes: int = 20 * 1024 * 1024  # 20 MB max URL response
     max_workspace_bytes: int = 500 * 1024 * 1024  # 500 MB per session workspace
     url_fetch_timeout: int = 30  # seconds
+
+    # --- URL Content Extraction ---
+    url_extraction_retry_with_js: bool = True  # Retry with Playwright if static extraction fails
+    url_extraction_min_content_length: int = 100  # Minimum chars for valid extraction
     git_clone_timeout: int = 120  # seconds
     git_clone_depth: int = 1  # shallow clone depth
     allowed_upload_extensions: str = ".pdf,.docx,.txt,.md,.csv,.html,.json,.xml"

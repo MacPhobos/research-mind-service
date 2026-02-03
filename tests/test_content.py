@@ -220,27 +220,31 @@ class TestAddContent:
         assert uploaded_file.read_bytes() == file_content
 
     def test_add_url_content_mocked(self, client: TestClient, tmp_content_sandbox: str):
-        """POST URL with mocked httpx returns 201."""
+        """POST URL with mocked extraction returns 201."""
+        from unittest.mock import AsyncMock
+
+        from app.services.extractors.base import ExtractionResult
+        from app.services.retrievers.url_retriever import UrlRetriever
+
         session = _create_session(client)
         session_id = session["session_id"]
 
-        mock_html_content = b"<html><body><h1>Test Page</h1></body></html>"
+        # Mock extraction result
+        mock_markdown = "# Test Page\n\nExtracted content from the web page."
+        mock_result = ExtractionResult(
+            content=mock_markdown,
+            title="Test Page",
+            word_count=7,
+            extraction_method="trafilatura",
+            extraction_time_ms=150.0,
+        )
 
-        # Create a mock response
-        mock_response = MagicMock(spec=httpx.Response)
-        mock_response.content = mock_html_content
-        mock_response.status_code = 200
-        mock_response.headers = {"content-type": "text/html; charset=utf-8"}
-        mock_response.raise_for_status = MagicMock()
-
-        with patch("httpx.Client") as mock_client_cls:
-            mock_client_instance = MagicMock()
-            mock_client_cls.return_value.__enter__ = MagicMock(
-                return_value=mock_client_instance
-            )
-            mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
-            mock_client_instance.get.return_value = mock_response
-
+        with patch.object(
+            UrlRetriever,
+            "_extract_async",
+            new_callable=AsyncMock,
+            return_value=mock_result,
+        ):
             response = client.post(
                 f"/api/v1/sessions/{session_id}/content/",
                 data={
@@ -256,8 +260,8 @@ class TestAddContent:
         assert data["content_type"] == "url"
         assert data["title"] == "Test Web Page"
         assert data["status"] == "ready"
-        assert data["size_bytes"] == len(mock_html_content)
-        assert data["mime_type"] == "text/html"
+        assert data["size_bytes"] == len(mock_markdown.encode("utf-8"))
+        assert data["mime_type"] == "text/markdown"
 
         # Verify content was written
         content_dir = Path(tmp_content_sandbox) / session_id / data["content_id"]
@@ -745,29 +749,22 @@ class TestUrlRetrieverErrors:
 
     def test_add_url_content_http_error(self, client: TestClient):
         """POST URL that returns HTTP error has status=error."""
+        from unittest.mock import AsyncMock
+
+        from app.services.extractors.exceptions import NetworkError
+        from app.services.retrievers.url_retriever import UrlRetriever
+
         session = _create_session(client)
         session_id = session["session_id"]
 
-        mock_response = MagicMock(spec=httpx.Response)
-        mock_response.status_code = 404
-        mock_response.reason_phrase = "Not Found"
-
-        http_error = httpx.HTTPStatusError(
-            "404 Not Found",
-            request=MagicMock(),
-            response=mock_response,
-        )
-
-        with patch("httpx.Client") as mock_client_cls:
-            mock_client_instance = MagicMock()
-            mock_client_cls.return_value.__enter__ = MagicMock(
-                return_value=mock_client_instance
-            )
-            mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
-            mock_client_instance.get.return_value.raise_for_status.side_effect = (
-                http_error
-            )
-
+        with patch.object(
+            UrlRetriever,
+            "_extract_async",
+            new_callable=AsyncMock,
+            side_effect=NetworkError(
+                "HTTP 404 from https://example.com/not-found: Not Found"
+            ),
+        ):
             response = client.post(
                 f"/api/v1/sessions/{session_id}/content/",
                 data={
@@ -784,19 +781,22 @@ class TestUrlRetrieverErrors:
 
     def test_add_url_content_connection_error(self, client: TestClient):
         """POST URL with connection error has status=error."""
+        from unittest.mock import AsyncMock
+
+        from app.services.extractors.exceptions import NetworkError
+        from app.services.retrievers.url_retriever import UrlRetriever
+
         session = _create_session(client)
         session_id = session["session_id"]
 
-        with patch("httpx.Client") as mock_client_cls:
-            mock_client_instance = MagicMock()
-            mock_client_cls.return_value.__enter__ = MagicMock(
-                return_value=mock_client_instance
-            )
-            mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
-            mock_client_instance.get.side_effect = httpx.RequestError(
-                "Connection refused", request=MagicMock()
-            )
-
+        with patch.object(
+            UrlRetriever,
+            "_extract_async",
+            new_callable=AsyncMock,
+            side_effect=NetworkError(
+                "Network error fetching https://unreachable.example.com: Connection refused"
+            ),
+        ):
             response = client.post(
                 f"/api/v1/sessions/{session_id}/content/",
                 data={
@@ -809,7 +809,7 @@ class TestUrlRetrieverErrors:
         assert response.status_code == 201
         data = response.json()
         assert data["status"] == "error"
-        assert "Request failed" in data["error_message"]
+        assert "Network error" in data["error_message"]
 
 
 # ------------------------------------------------------------------
