@@ -188,6 +188,40 @@ class AuditService:
             metadata_json={"original_action": action},
         )
 
+    @staticmethod
+    def log_content_add(
+        db: Session,
+        session_id: str,
+        content_id: str,
+        content_type: str,
+        title: str,
+        size_bytes: int | None = None,
+    ) -> None:
+        """Log content addition to a session."""
+        AuditService._create_entry(
+            db,
+            session_id,
+            "content_add",
+            metadata_json={
+                "content_id": content_id,
+                "content_type": content_type,
+                "title": title,
+                "size_bytes": size_bytes,
+            },
+        )
+
+    @staticmethod
+    def log_content_delete(
+        db: Session, session_id: str, content_id: str, title: str
+    ) -> None:
+        """Log content deletion from a session."""
+        AuditService._create_entry(
+            db,
+            session_id,
+            "content_delete",
+            metadata_json={"content_id": content_id, "title": title},
+        )
+
     # ------------------------------------------------------------------
     # Query
     # ------------------------------------------------------------------

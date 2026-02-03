@@ -37,6 +37,7 @@ class SessionResponse(BaseModel):
     archived: bool
     ttl_seconds: int | None = None
     is_indexed: bool = False
+    content_count: int = 0
 
 
 class SessionListResponse(BaseModel):

@@ -1,7 +1,7 @@
 # research-mind API Contract
 
-> **Version**: 1.1.0
-> **Last Updated**: 2026-02-01
+> **Version**: 1.2.0
+> **Last Updated**: 2026-02-03
 > **Status**: FROZEN - Changes require version bump and UI sync
 
 This document defines the API contract between `research-mind-service` (FastAPI backend) and `research-mind-ui` (SvelteKit frontend).
@@ -15,15 +15,16 @@ This document defines the API contract between `research-mind-service` (FastAPI 
 3. [Common Types](#common-types)
 4. [Health & Version](#health--version)
 5. [Sessions](#sessions)
-6. [Workspace Indexing](#workspace-indexing)
-7. [Audit Logs](#audit-logs)
-8. [Search (Planned)](#search-planned)
-9. [Analysis (Planned)](#analysis-planned)
-10. [Pagination](#pagination)
-11. [Error Handling](#error-handling)
-12. [Status Codes](#status-codes)
-13. [CORS Configuration](#cors-configuration)
-14. [Authentication](#authentication)
+6. [Content Management](#content-management)
+7. [Workspace Indexing](#workspace-indexing)
+8. [Audit Logs](#audit-logs)
+9. [Search (Planned)](#search-planned)
+10. [Analysis (Planned)](#analysis-planned)
+11. [Pagination](#pagination)
+12. [Error Handling](#error-handling)
+13. [Status Codes](#status-codes)
+14. [CORS Configuration](#cors-configuration)
+15. [Authentication](#authentication)
 
 ---
 
@@ -174,6 +175,7 @@ interface Session {
   archived: boolean;              // Whether session is archived
   ttl_seconds?: number;           // Time-to-live (null if no expiry)
   is_indexed: boolean;            // Whether workspace has been indexed
+  content_count: number;          // Number of content items in session
 }
 ```
 
@@ -210,7 +212,8 @@ Create a new research session.
   "status": "active",
   "archived": false,
   "ttl_seconds": null,
-  "is_indexed": false
+  "is_indexed": false,
+  "content_count": 0
 }
 ```
 
@@ -251,7 +254,8 @@ List all research sessions with pagination.
       "status": "active",
       "archived": false,
       "ttl_seconds": null,
-      "is_indexed": true
+      "is_indexed": true,
+      "content_count": 5
     }
   ],
   "count": 1
@@ -330,6 +334,274 @@ Delete a session and its workspace directory.
 ```bash
 curl -X DELETE http://localhost:15010/api/v1/sessions/{session_id}
 ```
+
+---
+
+## Content Management
+
+Content items are pieces of data (text, files, URLs, git repos) added to a session for analysis. Each content item is stored in a sandboxed directory and tracked in the database.
+
+### Content Types
+
+| Type | Description |
+|------|-------------|
+| `text` | Plain text content (source contains the text) |
+| `file_upload` | Uploaded file (use multipart form) |
+| `url` | Fetch content from URL (source contains the URL) |
+| `git_repo` | Clone a git repository (source contains the repo URL) |
+| `mcp_source` | Content from MCP tool (source contains MCP reference) |
+
+### Content Status
+
+| Status | Description |
+|--------|-------------|
+| `pending` | Content item created, retrieval not started |
+| `processing` | Content is being fetched/processed |
+| `ready` | Content successfully retrieved and stored |
+| `error` | Retrieval failed, see `error_message` |
+
+### Content Item Schema
+
+```typescript
+interface ContentItem {
+  content_id: string;           // UUID
+  session_id: string;           // Parent session UUID
+  content_type: string;         // "text" | "file_upload" | "url" | "git_repo" | "mcp_source"
+  title: string;                // Display name (max 512 chars)
+  source_ref?: string;          // Original source reference (max 2048 chars)
+  storage_path?: string;        // Path where content is stored
+  status: string;               // "pending" | "processing" | "ready" | "error"
+  error_message?: string;       // Error details if status is "error"
+  size_bytes?: number;          // Size of stored content
+  mime_type?: string;           // MIME type of content
+  metadata_json?: object;       // Additional metadata
+  created_at: string;           // ISO 8601 timestamp
+  updated_at: string;           // ISO 8601 timestamp
+}
+```
+
+### Add Content
+
+#### `POST /api/v1/sessions/{session_id}/content`
+
+Add content to a session. Uses multipart/form-data to support file uploads.
+
+**Path Parameters**
+
+| Parameter   | Type   | Description |
+| ----------- | ------ | ----------- |
+| `session_id` | string | Session UUID |
+
+**Form Fields**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `content_type` | string | yes | Content type: text, file_upload, url, git_repo, mcp_source |
+| `title` | string | no | Content title (max 512 chars) |
+| `source` | string | no | Source reference - text content, URL, or repo URL (max 2048 chars) |
+| `metadata` | string | no | JSON string of additional metadata |
+| `file` | file | no | File to upload (required for file_upload type) |
+
+**Response** `201 Created`
+
+```json
+{
+  "content_id": "b1c2d3e4-f5g6-7890-hijk-lm1234567890",
+  "session_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "content_type": "text",
+  "title": "API Design Notes",
+  "source_ref": "REST API design principles...",
+  "storage_path": "content.txt",
+  "status": "ready",
+  "error_message": null,
+  "size_bytes": 1234,
+  "mime_type": "text/plain",
+  "metadata_json": {},
+  "created_at": "2026-02-03T10:30:00",
+  "updated_at": "2026-02-03T10:30:00"
+}
+```
+
+**Response** `400 Bad Request` - Invalid metadata JSON
+
+```json
+{
+  "detail": {
+    "error": {
+      "code": "INVALID_METADATA",
+      "message": "metadata must be valid JSON"
+    }
+  }
+}
+```
+
+**Response** `404 Not Found` - Session not found
+
+```json
+{
+  "detail": {
+    "error": {
+      "code": "SESSION_NOT_FOUND",
+      "message": "Session 'nonexistent-id' not found"
+    }
+  }
+}
+```
+
+**curl** (text content):
+```bash
+curl -X POST http://localhost:15010/api/v1/sessions/{session_id}/content \
+  -F "content_type=text" \
+  -F "title=API Notes" \
+  -F "source=REST API design principles and best practices..."
+```
+
+**curl** (file upload):
+```bash
+curl -X POST http://localhost:15010/api/v1/sessions/{session_id}/content \
+  -F "content_type=file_upload" \
+  -F "title=Research Paper" \
+  -F "file=@/path/to/document.pdf"
+```
+
+**curl** (URL):
+```bash
+curl -X POST http://localhost:15010/api/v1/sessions/{session_id}/content \
+  -F "content_type=url" \
+  -F "title=Reference Article" \
+  -F "source=https://example.com/article.html"
+```
+
+---
+
+### List Content
+
+#### `GET /api/v1/sessions/{session_id}/content`
+
+List all content items for a session with pagination.
+
+**Path Parameters**
+
+| Parameter   | Type   | Description |
+| ----------- | ------ | ----------- |
+| `session_id` | string | Session UUID |
+
+**Query Parameters**
+
+| Parameter | Type    | Default | Description |
+| --------- | ------- | ------- | ----------- |
+| `limit`   | integer | 50      | Items per page |
+| `offset`  | integer | 0       | Starting position |
+
+**Response** `200 OK`
+
+```json
+{
+  "items": [
+    {
+      "content_id": "b1c2d3e4-f5g6-7890-hijk-lm1234567890",
+      "session_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "content_type": "text",
+      "title": "API Design Notes",
+      "source_ref": "REST API design principles...",
+      "storage_path": "content.txt",
+      "status": "ready",
+      "error_message": null,
+      "size_bytes": 1234,
+      "mime_type": "text/plain",
+      "metadata_json": {},
+      "created_at": "2026-02-03T10:30:00",
+      "updated_at": "2026-02-03T10:30:00"
+    }
+  ],
+  "count": 1
+}
+```
+
+**Response** `404 Not Found` - Session not found
+
+**curl**:
+```bash
+curl "http://localhost:15010/api/v1/sessions/{session_id}/content?limit=50&offset=0"
+```
+
+---
+
+### Get Content
+
+#### `GET /api/v1/sessions/{session_id}/content/{content_id}`
+
+Get a single content item by ID.
+
+**Path Parameters**
+
+| Parameter   | Type   | Description |
+| ----------- | ------ | ----------- |
+| `session_id` | string | Session UUID |
+| `content_id` | string | Content UUID |
+
+**Response** `200 OK` - ContentItem object
+
+**Response** `404 Not Found` - Content not found
+
+```json
+{
+  "detail": {
+    "error": {
+      "code": "CONTENT_NOT_FOUND",
+      "message": "Content 'content-id' not found in session 'session-id'"
+    }
+  }
+}
+```
+
+**curl**:
+```bash
+curl http://localhost:15010/api/v1/sessions/{session_id}/content/{content_id}
+```
+
+---
+
+### Delete Content
+
+#### `DELETE /api/v1/sessions/{session_id}/content/{content_id}`
+
+Delete a content item and its storage files.
+
+**Path Parameters**
+
+| Parameter   | Type   | Description |
+| ----------- | ------ | ----------- |
+| `session_id` | string | Session UUID |
+| `content_id` | string | Content UUID |
+
+**Response** `204 No Content`
+
+**Response** `404 Not Found` - Content not found
+
+```json
+{
+  "detail": {
+    "error": {
+      "code": "CONTENT_NOT_FOUND",
+      "message": "Content 'content-id' not found in session 'session-id'"
+    }
+  }
+}
+```
+
+**curl**:
+```bash
+curl -X DELETE http://localhost:15010/api/v1/sessions/{session_id}/content/{content_id}
+```
+
+---
+
+### Content Cascade Behavior
+
+When a session is deleted:
+- All associated content items are automatically deleted (CASCADE)
+- Content storage directories are cleaned up from disk
 
 ---
 
@@ -604,7 +876,9 @@ Errors are returned inside `detail` (FastAPI HTTPException format):
 | Code                  | HTTP Status | Description                    |
 | --------------------- | ----------- | ------------------------------ |
 | `VALIDATION_ERROR`    | 400         | Invalid request parameters     |
+| `INVALID_METADATA`    | 400         | Invalid JSON in metadata field |
 | `SESSION_NOT_FOUND`   | 404         | Session UUID not found         |
+| `CONTENT_NOT_FOUND`   | 404         | Content item not found         |
 | `WORKSPACE_NOT_FOUND` | 404         | Workspace directory not found  |
 | `TOOL_NOT_FOUND`      | 500         | mcp-vector-search CLI missing  |
 | `INDEXING_TIMEOUT`    | 500         | Indexing subprocess timed out  |
@@ -665,6 +939,7 @@ All endpoints are currently open. Authentication will be added in a future versi
 | ------- | ---------- | ------------------------------------------ |
 | 1.0.0   | 2026-01-31 | Initial contract: Sessions, indexing (planned), search, analysis |
 | 1.1.0   | 2026-02-01 | Updated to match implemented endpoints: workspace indexing (subprocess-based), audit logs, index status. Marked search/analysis as planned. |
+| 1.2.0   | 2026-02-03 | Added Content Management endpoints: POST/GET/DELETE content items with support for text, file_upload, url, git_repo, mcp_source types. Added CONTENT_NOT_FOUND and INVALID_METADATA error codes. |
 
 ---
 

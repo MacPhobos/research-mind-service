@@ -38,6 +38,22 @@ class Settings(BaseSettings):
     # Production: Override via WORKSPACE_ROOT env var to /var/lib/research-mind/workspaces
     workspace_root: str = "./workspaces"
 
+    # --- Content Sandbox ---
+    # Root directory where session content is stored before indexing
+    # Development: ./content_sandboxes (relative to service root)
+    # Production: /var/lib/research-mind/content_sandboxes
+    content_sandbox_root: str = "./content_sandboxes"
+
+    # --- Content Retrieval Limits ---
+    max_upload_bytes: int = 50 * 1024 * 1024  # 50 MB max file upload
+    max_text_bytes: int = 10 * 1024 * 1024  # 10 MB max text content
+    max_url_response_bytes: int = 20 * 1024 * 1024  # 20 MB max URL response
+    max_workspace_bytes: int = 500 * 1024 * 1024  # 500 MB per session workspace
+    url_fetch_timeout: int = 30  # seconds
+    git_clone_timeout: int = 120  # seconds
+    git_clone_depth: int = 1  # shallow clone depth
+    allowed_upload_extensions: str = ".pdf,.docx,.txt,.md,.csv,.html,.json,.xml"
+
     # --- Subprocess Timeouts (seconds) ---
     subprocess_timeout_init: int = 30
     subprocess_timeout_index: int = 60

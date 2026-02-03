@@ -10,6 +10,7 @@ from app.schemas.session import (
     CreateSessionRequest,
     SessionListResponse,
     SessionResponse,
+    UpdateSessionRequest,
 )
 from app.services import session_service
 
@@ -43,6 +44,27 @@ def get_session(
 ) -> SessionResponse:
     """Retrieve a single session by ID."""
     result = session_service.get_session(db, session_id)
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": {
+                    "code": "SESSION_NOT_FOUND",
+                    "message": f"Session '{session_id}' not found",
+                }
+            },
+        )
+    return result
+
+
+@router.patch("/{session_id}", response_model=SessionResponse)
+def update_session(
+    session_id: str,
+    request: UpdateSessionRequest,
+    db: Session = Depends(get_db),
+) -> SessionResponse:
+    """Update a session's mutable fields (name, description, status)."""
+    result = session_service.update_session(db, session_id, request)
     if result is None:
         raise HTTPException(
             status_code=404,

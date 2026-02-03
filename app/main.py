@@ -6,6 +6,7 @@ Configures middleware, exception handlers, lifecycle hooks, and routes.
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
 import time
 from contextlib import asynccontextmanager
@@ -20,6 +21,7 @@ from app.db.session import create_all_tables
 from app.middleware.session_validation import SessionValidationMiddleware
 from app.routes import health, api
 from app.routes.audit import router as audit_router
+from app.routes.content import router as content_router
 from app.routes.indexing import router as indexing_router
 from app.routes.sessions import router as sessions_router
 
@@ -80,6 +82,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             "mcp-vector-search CLI not found on PATH. "
             "Indexing features will be unavailable."
         )
+
+    # Ensure content sandbox root directory exists
+    content_sandbox = settings.content_sandbox_root
+    os.makedirs(content_sandbox, exist_ok=True)
+    logger.info("Content sandbox root ensured at %s", os.path.abspath(content_sandbox))
 
     yield
 
@@ -165,6 +172,9 @@ app.include_router(sessions_router)
 
 # Indexing routes (prefixed with /api/v1/workspaces)
 app.include_router(indexing_router)
+
+# Content management routes (prefixed with /api/v1/sessions/{session_id}/content)
+app.include_router(content_router)
 
 # Audit log routes (prefixed with /api/v1/sessions)
 app.include_router(audit_router)
