@@ -37,12 +37,6 @@ from app.models.content_item import ContentItem
 
 
 @pytest.fixture()
-def tmp_workspace(tmp_path: Path) -> str:
-    """Provide a temporary workspace root directory."""
-    return str(tmp_path / "workspaces")
-
-
-@pytest.fixture()
 def tmp_content_sandbox(tmp_path: Path) -> str:
     """Provide a temporary content sandbox root directory."""
     return str(tmp_path / "content_sandboxes")
@@ -91,16 +85,14 @@ def db_session(db_engine) -> Session:
 
 
 @pytest.fixture()
-def client(db_engine, tmp_workspace: str, tmp_content_sandbox: str) -> TestClient:
-    """TestClient with overridden DB, workspace_root, and content_sandbox_root."""
+def client(db_engine, tmp_content_sandbox: str) -> TestClient:
+    """TestClient with overridden DB and content_sandbox_root."""
     from app.core.config import settings
 
     # Save original settings
-    original_workspace_root = settings.workspace_root
     original_content_sandbox_root = settings.content_sandbox_root
 
     # Override settings (bypass pydantic model immutability)
-    object.__setattr__(settings, "workspace_root", tmp_workspace)
     object.__setattr__(settings, "content_sandbox_root", tmp_content_sandbox)
 
     TestingSessionLocal = sessionmaker(
@@ -120,7 +112,6 @@ def client(db_engine, tmp_workspace: str, tmp_content_sandbox: str) -> TestClien
     app.dependency_overrides.clear()
 
     # Restore original settings
-    object.__setattr__(settings, "workspace_root", original_workspace_root)
     object.__setattr__(settings, "content_sandbox_root", original_content_sandbox_root)
 
 

@@ -48,18 +48,18 @@ def shared_db_engine():
 
 
 @pytest.fixture()
-def shared_tmp_workspace(tmp_path):
-    """Provide a temporary workspace root directory."""
-    return str(tmp_path / "workspaces")
+def shared_tmp_content_sandbox(tmp_path):
+    """Provide a temporary content sandbox root directory."""
+    return str(tmp_path / "content_sandboxes")
 
 
 @pytest.fixture()
-def shared_client(shared_db_engine, shared_tmp_workspace):
-    """TestClient with overridden DB dependency and workspace root."""
+def shared_client(shared_db_engine, shared_tmp_content_sandbox):
+    """TestClient with overridden DB dependency and content_sandbox_root."""
     from app.core.config import settings
 
-    original_workspace_root = settings.workspace_root
-    object.__setattr__(settings, "workspace_root", shared_tmp_workspace)
+    original_content_sandbox_root = settings.content_sandbox_root
+    object.__setattr__(settings, "content_sandbox_root", shared_tmp_content_sandbox)
 
     TestingSessionLocal = sessionmaker(
         autocommit=False, autoflush=False, bind=shared_db_engine
@@ -76,7 +76,7 @@ def shared_client(shared_db_engine, shared_tmp_workspace):
     with TestClient(app) as tc:
         yield tc
     app.dependency_overrides.clear()
-    object.__setattr__(settings, "workspace_root", original_workspace_root)
+    object.__setattr__(settings, "content_sandbox_root", original_content_sandbox_root)
 
 
 # ------------------------------------------------------------------

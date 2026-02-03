@@ -262,7 +262,7 @@ LOG_LEVEL=INFO  # DEBUG, INFO, WARNING, ERROR, CRITICAL
 Back up the following:
 
 - **PostgreSQL database**: Use `pg_dump` for database backups
-- **Workspace files**: The `WORKSPACE_ROOT` directory contains session data and indexes
+- **Session files**: The `CONTENT_SANDBOX_ROOT` directory contains session data and indexes
 - **Environment configuration**: Keep `.env` files in a secrets manager
 
 ---

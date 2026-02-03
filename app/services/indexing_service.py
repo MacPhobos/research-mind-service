@@ -51,8 +51,8 @@ class IndexingService:
 
         # Security: validate workspace path before subprocess invocation
         if settings.path_validator_enabled:
-            workspace_root = Path(settings.workspace_root).resolve()
-            validator = PathValidator(workspace_root)
+            sandbox_root = Path(settings.content_sandbox_root).resolve()
+            validator = PathValidator(sandbox_root)
             if not validator.validate_workspace_for_subprocess(workspace_path):
                 logger.warning(
                     "Path validation failed for workspace: %s", workspace_path

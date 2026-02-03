@@ -33,13 +33,11 @@ class Settings(BaseSettings):
         "postgresql+psycopg://postgres:password@localhost:5432/research_mind"
     )
 
-    # --- Workspace ---
-    # Local development: ./workspaces
-    # Production: Override via WORKSPACE_ROOT env var to /var/lib/research-mind/workspaces
-    workspace_root: str = "./workspaces"
-
     # --- Content Sandbox ---
-    # Root directory where session content is stored before indexing
+    # Root directory for all session data (content and indexes)
+    # Each session gets: {content_sandbox_root}/{session_id}/
+    #   - Content subdirs: {content_id_1}/, {content_id_2}/, etc.
+    #   - Index data: .mcp-vector-search/
     # Development: ./content_sandboxes (relative to service root)
     # Production: /var/lib/research-mind/content_sandboxes
     content_sandbox_root: str = "./content_sandboxes"

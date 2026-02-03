@@ -78,10 +78,10 @@ WARNING: mcp-vector-search CLI not found on PATH. Indexing features will be unav
    ls -la /path/to/workspaces/
    ```
 
-2. For local development, ensure the `WORKSPACE_ROOT` directory is writable:
+2. For local development, ensure the `CONTENT_SANDBOX_ROOT` directory is writable:
    ```bash
-   mkdir -p ./workspaces
-   chmod 755 ./workspaces
+   mkdir -p ./content_sandboxes
+   chmod 755 ./content_sandboxes
    ```
 
 3. For Docker deployments, the `appuser` must own the workspace volume:
@@ -92,7 +92,7 @@ WARNING: mcp-vector-search CLI not found on PATH. Indexing features will be unav
 
 4. If running as a different user, fix ownership:
    ```bash
-   sudo chown -R $(whoami) ./workspaces
+   sudo chown -R $(whoami) ./content_sandboxes
    ```
 
 ---
@@ -269,20 +269,20 @@ ERROR: [Errno 48] Address already in use
 
 **Symptom**: Operations on a session return `WORKSPACE_NOT_FOUND` even though the session exists in the database.
 
-**Cause**: The workspace directory on disk was deleted or the `WORKSPACE_ROOT` changed.
+**Cause**: The workspace directory on disk was deleted or the `CONTENT_SANDBOX_ROOT` changed.
 
 **Solution**:
 
 1. Check if the workspace directory exists:
    ```bash
-   ls -la $WORKSPACE_ROOT/{session_id}/
+   ls -la $CONTENT_SANDBOX_ROOT/{session_id}/
    ```
 
-2. Verify `WORKSPACE_ROOT` is set correctly in `.env`
+2. Verify `CONTENT_SANDBOX_ROOT` is set correctly in `.env`
 
 3. If the workspace was deleted, delete the session and create a new one
 
-4. For Docker deployments, ensure the workspace volume is mounted correctly
+4. For Docker deployments, ensure the content sandbox volume is mounted correctly
 
 ---
 

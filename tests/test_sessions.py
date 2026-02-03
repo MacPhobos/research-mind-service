@@ -18,9 +18,9 @@ from app.main import app
 
 
 @pytest.fixture()
-def tmp_workspace(tmp_path):
-    """Provide a temporary workspace root directory."""
-    return str(tmp_path / "workspaces")
+def tmp_content_sandbox(tmp_path):
+    """Provide a temporary content sandbox root directory."""
+    return str(tmp_path / "content_sandboxes")
 
 
 @pytest.fixture()
@@ -52,13 +52,13 @@ def db_session(db_engine):
 
 
 @pytest.fixture()
-def client(db_engine, tmp_workspace):
-    """TestClient with overridden DB dependency and workspace root."""
+def client(db_engine, tmp_content_sandbox):
+    """TestClient with overridden DB dependency and content_sandbox_root."""
     from app.core.config import settings
 
-    # Override workspace_root (bypass pydantic model immutability)
-    original_workspace_root = settings.workspace_root
-    object.__setattr__(settings, "workspace_root", tmp_workspace)
+    # Override content_sandbox_root (bypass pydantic model immutability)
+    original_content_sandbox_root = settings.content_sandbox_root
+    object.__setattr__(settings, "content_sandbox_root", tmp_content_sandbox)
 
     TestingSessionLocal = sessionmaker(
         autocommit=False, autoflush=False, bind=db_engine
@@ -75,7 +75,7 @@ def client(db_engine, tmp_workspace):
     with TestClient(app) as tc:
         yield tc
     app.dependency_overrides.clear()
-    object.__setattr__(settings, "workspace_root", original_workspace_root)
+    object.__setattr__(settings, "content_sandbox_root", original_content_sandbox_root)
 
 
 # ------------------------------------------------------------------
@@ -84,7 +84,7 @@ def client(db_engine, tmp_workspace):
 
 
 class TestCreateSession:
-    def test_create_session(self, client: TestClient, tmp_workspace: str):
+    def test_create_session(self, client: TestClient, tmp_content_sandbox: str):
         response = client.post(
             "/api/v1/sessions/",
             json={"name": "My Session", "description": "Test description"},

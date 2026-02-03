@@ -179,7 +179,7 @@ curl "http://localhost:15010/api/v1/sessions/{session_id}/audit?limit=50&offset=
   "session_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
   "name": "OAuth2 Research",
   "description": "Token refresh patterns",
-  "workspace_path": "./workspaces/a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "workspace_path": "./content_sandboxes/a1b2c3d4-e5f6-7890-abcd-ef1234567890",
   "created_at": "2026-01-31T14:30:00",
   "last_accessed": "2026-01-31T14:30:00",
   "status": "active",
@@ -226,7 +226,7 @@ All configuration is via environment variables. See `.env.example` for a complet
 | `PORT` | `15010` | Bind port |
 | `DEBUG` | `false` | Enable debug mode |
 | `DATABASE_URL` | `postgresql+psycopg://postgres:password@localhost:5432/research_mind` | PostgreSQL connection string (psycopg v3) |
-| `WORKSPACE_ROOT` | `./workspaces` | Root directory for session workspaces |
+| `CONTENT_SANDBOX_ROOT` | `./content_sandboxes` | Root directory for session data (content and indexes) |
 | `SUBPROCESS_TIMEOUT_INIT` | `30` | Timeout (seconds) for `mcp-vector-search init` |
 | `SUBPROCESS_TIMEOUT_INDEX` | `60` | Timeout (seconds) for `mcp-vector-search index` |
 | `SUBPROCESS_TIMEOUT_LARGE` | `600` | Timeout (seconds) for large workspace indexing |
@@ -313,7 +313,7 @@ All file path operations are validated to prevent path traversal attacks. The `P
 
 ### Session Isolation
 
-Each session gets its own workspace directory under `WORKSPACE_ROOT`. Sessions cannot access files belonging to other sessions. The `SessionValidationMiddleware` enforces this at the HTTP layer.
+Each session gets its own directory under `CONTENT_SANDBOX_ROOT`. Sessions cannot access files belonging to other sessions. The `SessionValidationMiddleware` enforces this at the HTTP layer.
 
 ### Audit Logging
 

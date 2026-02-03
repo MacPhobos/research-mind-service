@@ -52,7 +52,7 @@ def create_session(db: DbSession, request: CreateSessionRequest) -> SessionRespo
     """Create a new session, persist it, and create the workspace directory."""
     # Generate session_id eagerly so we can derive workspace_path
     session_id = str(uuid4())
-    workspace_path = os.path.join(settings.workspace_root, session_id)
+    workspace_path = os.path.join(settings.content_sandbox_root, session_id)
 
     session = Session(
         session_id=session_id,
@@ -129,7 +129,7 @@ def update_session(
 
 
 def delete_session(db: DbSession, session_id: str) -> bool:
-    """Delete a session record and remove its workspace and content sandbox.
+    """Delete a session record and remove its workspace directory.
 
     Returns True if the session was found and deleted, False otherwise.
     """
@@ -142,16 +142,10 @@ def delete_session(db: DbSession, session_id: str) -> bool:
     db.delete(session)
     db.commit()
 
-    # Clean up workspace directory
+    # Clean up workspace directory (contains content and index data)
     if workspace and os.path.isdir(workspace):
         shutil.rmtree(workspace, ignore_errors=True)
-        logger.info("Removed workspace directory %s", workspace)
-
-    # Clean up content sandbox directory
-    content_sandbox = os.path.join(settings.content_sandbox_root, session_id)
-    if os.path.isdir(content_sandbox):
-        shutil.rmtree(content_sandbox, ignore_errors=True)
-        logger.info("Removed content sandbox directory %s", content_sandbox)
+        logger.info("Removed session directory %s", workspace)
 
     logger.info("Deleted session %s", session_id)
     return True
