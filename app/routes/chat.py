@@ -224,23 +224,30 @@ async def stream_chat_response(
             ):
                 # Parse complete event to extract final data
                 if event.startswith("event: complete\n"):
-                    # Extract data from complete event
+                    # Extract data from complete event using robust line-by-line parsing
                     try:
-                        data_line = event.split("\ndata: ")[1].strip()
-                        complete_data = json.loads(data_line)
-                        final_content = complete_data.get("content", "")
-                        final_token_count = complete_data.get("token_count")
-                        final_duration_ms = complete_data.get("duration_ms")
-                    except (IndexError, json.JSONDecodeError):
-                        pass
+                        for line in event.split("\n"):
+                            if line.startswith("data: "):
+                                data_json = line[6:]  # Remove "data: " prefix
+                                complete_data = json.loads(data_json)
+                                final_content = complete_data.get("content", "")
+                                final_token_count = complete_data.get("token_count")
+                                final_duration_ms = complete_data.get("duration_ms")
+                                break
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Failed to parse complete event: {e}, event={event[:200]}")
                 elif event.startswith("event: error\n"):
-                    # Extract error message
+                    # Extract error message using robust line-by-line parsing
                     try:
-                        data_line = event.split("\ndata: ")[1].strip()
-                        error_data = json.loads(data_line)
-                        error_occurred = True
-                        error_message = error_data.get("error", "Unknown error")
-                    except (IndexError, json.JSONDecodeError):
+                        for line in event.split("\n"):
+                            if line.startswith("data: "):
+                                data_json = line[6:]  # Remove "data: " prefix
+                                error_data = json.loads(data_json)
+                                error_occurred = True
+                                error_message = error_data.get("error", "Unknown error")
+                                break
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Failed to parse error event: {e}, event={event[:200]}")
                         error_occurred = True
                         error_message = "Unknown streaming error"
 
