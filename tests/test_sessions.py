@@ -102,6 +102,29 @@ class TestCreateSession:
         # Workspace directory should have been created
         assert os.path.isdir(data["workspace_path"])
 
+    def test_create_session_creates_claude_md(self, client: TestClient, tmp_content_sandbox: str):
+        """Verify that CLAUDE.md is created in the sandbox directory with correct content."""
+        response = client.post(
+            "/api/v1/sessions/",
+            json={"name": "Claude MD Session"},
+        )
+        assert response.status_code == 201
+        data = response.json()
+        workspace_path = data["workspace_path"]
+
+        # CLAUDE.md should exist in the workspace directory
+        claude_md_path = os.path.join(workspace_path, "CLAUDE.md")
+        assert os.path.isfile(claude_md_path), "CLAUDE.md should exist in sandbox"
+
+        # Verify the content matches the expected template
+        with open(claude_md_path, "r") as f:
+            content = f.read()
+
+        expected_content = """You are a research assistant responsible for answering questions based on the content stored in this sandbox directory.
+Use the content to provide accurate and relevant answers.
+"""
+        assert content == expected_content, "CLAUDE.md content should match template"
+
     def test_create_session_minimal(self, client: TestClient):
         response = client.post(
             "/api/v1/sessions/",

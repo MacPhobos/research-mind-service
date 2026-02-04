@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import shutil
+from pathlib import Path
 from uuid import uuid4
 
 from sqlalchemy.orm import Session as DbSession
@@ -15,6 +16,23 @@ from app.models.session import Session
 from app.schemas.session import CreateSessionRequest, SessionResponse, UpdateSessionRequest
 
 logger = logging.getLogger(__name__)
+
+# Template content for CLAUDE.md in session sandbox directories
+SANDBOX_CLAUDE_MD_TEMPLATE = """You are a research assistant responsible for answering questions based on the content stored in this sandbox directory.
+Use the content to provide accurate and relevant answers.
+"""
+
+
+def create_sandbox_claude_md(sandbox_path: Path | str) -> None:
+    """Create CLAUDE.md file in the sandbox directory.
+
+    Args:
+        sandbox_path: Path to the session sandbox directory.
+    """
+    sandbox_path = Path(sandbox_path)
+    claude_md_path = sandbox_path / "CLAUDE.md"
+    claude_md_path.write_text(SANDBOX_CLAUDE_MD_TEMPLATE)
+    logger.debug("Created CLAUDE.md in %s", sandbox_path)
 
 
 def _build_response(session: Session, db: DbSession | None = None) -> SessionResponse:
@@ -67,6 +85,10 @@ def create_session(db: DbSession, request: CreateSessionRequest) -> SessionRespo
 
     # Create workspace directory on disk
     os.makedirs(session.workspace_path, exist_ok=True)
+
+    # Create CLAUDE.md file in the sandbox directory
+    create_sandbox_claude_md(session.workspace_path)
+
     logger.info("Created session %s at %s", session.session_id, session.workspace_path)
 
     return _build_response(session, db)
