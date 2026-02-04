@@ -55,6 +55,16 @@ def _verify_mcp_cli() -> str | None:
         return path
     return None
 
+def _verify_claude_mpm_cli() -> str | None:
+    """Check that claude-mpm CLI is available on PATH.
+
+    Returns the path to the executable on success, or None if the tool is missing.
+    """
+    path = shutil.which("claude-mpm")
+    if path:
+        logger.debug("claude-mpm found at: %s", path)
+        return path
+    return None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
@@ -80,12 +90,22 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 "Use 'alembic upgrade head' to create tables."
             )
 
-    cli_version = _verify_mcp_cli()
-    if cli_version:
-        logger.info("mcp-vector-search CLI detected at: %s", cli_version)
+    mcp_vector_search_cli_presence = _verify_mcp_cli()
+    if mcp_vector_search_cli_presence:
+        logger.info("mcp-vector-search CLI detected at: %s", mcp_vector_search_cli_presence)
     else:
         logger.warning(
             "mcp-vector-search CLI not found on PATH. "
+            "Indexing features will be unavailable. "
+            "PATH: %s", os.environ.get("PATH", "")
+        )
+
+    claude_mpm_cli_presence = _verify_claude_mpm_cli()
+    if claude_mpm_cli_presence:
+        logger.info("claude_mpm CLI detected at: %s", claude_mpm_cli_presence)
+    else:
+        logger.warning(
+            "claude_mpm CLI not found on PATH. "
             "Indexing features will be unavailable. "
             "PATH: %s", os.environ.get("PATH", "")
         )
