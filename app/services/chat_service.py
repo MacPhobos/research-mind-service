@@ -2,17 +2,23 @@
 
 Includes claude-mpm subprocess integration for AI-powered chat responses.
 CRITICAL: Uses claude-mpm executable exclusively. Never the native claude CLI.
+
+Two-Stage Response Streaming:
+- Stage 1 (Expandable): Plain text initialization + system JSON events (NOT persisted)
+- Stage 2 (Primary): Final answer from assistant/result events (persisted to DB)
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import shutil
 import time
 from collections.abc import AsyncGenerator
 from datetime import datetime, timezone
+from typing import Any
 from uuid import uuid4
 
 from sqlalchemy.orm import Session as DbSession
@@ -33,7 +39,10 @@ from app.schemas.chat import (
     ChatStreamChunkEvent,
     ChatStreamCompleteEvent,
     ChatStreamErrorEvent,
+    ChatStreamEventType,
     ChatStreamHeartbeatEvent,
+    ChatStreamResultMetadata,
+    ChatStreamStage,
     ChatStreamStartEvent,
     SendChatMessageRequest,
 )
@@ -277,6 +286,90 @@ def delete_message(db: DbSession, session_id: str, message_id: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
+def classify_event(event: dict[str, Any]) -> tuple[ChatStreamEventType, ChatStreamStage]:
+    """Classify a JSON event from claude-mpm into event type and stage.
+
+    Stage 1 (EXPANDABLE): System initialization and hooks - NOT persisted
+    Stage 2 (PRIMARY): Assistant and result events - persisted to database
+
+    Args:
+        event: Parsed JSON event from claude-mpm stream.
+
+    Returns:
+        Tuple of (event_type, stage) for routing and display.
+    """
+    event_type_str = event.get("type", "")
+
+    if event_type_str == "system":
+        subtype = event.get("subtype", "")
+        if subtype in ("hook_started", "hook_response"):
+            return (ChatStreamEventType.SYSTEM_HOOK, ChatStreamStage.EXPANDABLE)
+        # init, or any other system subtype
+        return (ChatStreamEventType.SYSTEM_INIT, ChatStreamStage.EXPANDABLE)
+
+    elif event_type_str == "stream_event":
+        # Token-by-token streaming (if --include-partial-messages is used)
+        return (ChatStreamEventType.STREAM_TOKEN, ChatStreamStage.EXPANDABLE)
+
+    elif event_type_str == "assistant":
+        return (ChatStreamEventType.ASSISTANT, ChatStreamStage.PRIMARY)
+
+    elif event_type_str == "result":
+        return (ChatStreamEventType.RESULT, ChatStreamStage.PRIMARY)
+
+    # Unknown event type - default to expandable for safety
+    return (ChatStreamEventType.STREAM_TOKEN, ChatStreamStage.EXPANDABLE)
+
+
+def extract_metadata(result_event: dict[str, Any]) -> ChatStreamResultMetadata:
+    """Extract metadata from a result event.
+
+    The result event contains rich information about the API call including
+    token usage, timing, and cost information.
+
+    Args:
+        result_event: The parsed result JSON event from claude-mpm.
+
+    Returns:
+        ChatStreamResultMetadata with extracted fields.
+    """
+    usage = result_event.get("usage", {})
+
+    return ChatStreamResultMetadata(
+        duration_ms=result_event.get("duration_ms"),
+        duration_api_ms=result_event.get("duration_api_ms"),
+        cost_usd=result_event.get("total_cost_usd"),
+        session_id=result_event.get("session_id"),
+        num_turns=result_event.get("num_turns"),
+        token_count=usage.get("output_tokens"),
+        input_tokens=usage.get("input_tokens"),
+        cache_read_tokens=usage.get("cache_read_input_tokens"),
+    )
+
+
+def extract_assistant_content(assistant_event: dict[str, Any]) -> str:
+    """Extract text content from an assistant message event.
+
+    The assistant event contains a message object with content blocks.
+    We extract and concatenate all text blocks.
+
+    Args:
+        assistant_event: The parsed assistant JSON event from claude-mpm.
+
+    Returns:
+        Concatenated text content from the assistant message.
+    """
+    message = assistant_event.get("message", {})
+    content_blocks = message.get("content", [])
+    text_parts: list[str] = []
+
+    for block in content_blocks:
+        if block.get("type") == "text":
+            text_parts.append(block.get("text", ""))
+
+    return "".join(text_parts)
+
+
 def _get_claude_mpm_path() -> str:
     """Get the path to claude-mpm CLI.
 
@@ -334,10 +427,22 @@ async def stream_claude_mpm_response(
     user_content: str,
     assistant_message_id: str,
 ) -> AsyncGenerator[str, None]:
-    """Stream response from claude-mpm using subprocess.
+    """Stream response from claude-mpm using subprocess with two-stage parsing.
 
-    Uses line-buffered streaming since claude-mpm outputs plain text.
-    Yields SSE-formatted events for real-time frontend updates.
+    Two-Stage Response Streaming:
+    - Stage 1 (EXPANDABLE): Plain text init + system JSON events (NOT persisted)
+    - Stage 2 (PRIMARY): Final answer from assistant/result events (persisted)
+
+    Output format from claude-mpm with --output-format stream-json --verbose:
+    1. Plain text initialization (claude-mpm banner, agent sync, etc.)
+    2. JSON streaming events (system, assistant, result)
+
+    Parsing strategy:
+    1. Stream plain text lines as INIT_TEXT events (Stage 1)
+    2. Detect JSON start (line begins with '{')
+    3. Parse JSON events, classify into Stage 1 (system) or Stage 2 (assistant/result)
+    4. Extract final answer and metadata from result event
+    5. Only Stage 2 content is persisted to database
 
     CRITICAL: Uses claude-mpm exclusively, NOT native claude CLI.
     See /docs/research/claude-mpm-cli-research.md for details.
@@ -359,8 +464,9 @@ async def stream_claude_mpm_response(
         ClaudeMpmFailedError: Subprocess returned non-zero exit code.
     """
     start_time = time.time()
-    accumulated_content = ""
-    token_count = 0
+    stage2_content = ""  # Primary answer (persisted to database)
+    metadata: ChatStreamResultMetadata | None = None
+    json_mode = False  # Track when we enter JSON streaming mode
     last_event_time = time.time()
 
     try:
@@ -373,6 +479,7 @@ async def stream_claude_mpm_response(
         # Build command using claude-mpm exclusively
         # NOTE: --non-interactive is the oneshot mode flag
         # Working directory is set via CLAUDE_MPM_USER_PWD env var AND cwd
+        # Pass `-- --output-format stream-json --verbose` to native claude CLI
         cmd = [
             claude_mpm_path,
             "run",
@@ -383,10 +490,14 @@ async def stream_claude_mpm_response(
             "subprocess",  # Required for output capture
             "-i",
             user_content,  # Input prompt
+            "--",  # Pass remaining args to native claude CLI
+            "--output-format",
+            "stream-json",  # Enable JSON streaming output
+            "--verbose",  # Include verbose system events
         ]
 
         logger.info(
-            "Spawning claude-mpm subprocess in %s for message %s",
+            "Spawning claude-mpm subprocess in %s for message %s (JSON streaming mode)",
             workspace_path,
             assistant_message_id,
         )
@@ -404,8 +515,7 @@ async def stream_claude_mpm_response(
             cwd=workspace_path,  # Also set cwd for safety
         )
 
-        # Stream stdout line by line
-        # NOTE: claude-mpm outputs plain text, not JSON
+        # Stream stdout line by line with two-stage parsing
         try:
             while True:
                 # Check if we need to send a heartbeat
@@ -433,18 +543,83 @@ async def stream_claude_mpm_response(
                 if not line:
                     break
 
-                line_str = line.decode("utf-8")
+                line_str = line.decode("utf-8").rstrip()
                 if not line_str:
                     continue
 
-                # Accumulate content
-                accumulated_content += line_str
-                # Rough token estimate (words)
-                token_count += len(line_str.split())
+                # Detect JSON mode start (line begins with '{')
+                if not json_mode and line_str.startswith("{"):
+                    json_mode = True
+                    logger.debug("Entered JSON streaming mode for message %s", assistant_message_id)
 
-                # Yield chunk event with the line
-                chunk_event = ChatStreamChunkEvent(content=line_str)
-                yield f"event: chunk\ndata: {chunk_event.model_dump_json()}\n\n"
+                if json_mode:
+                    # Parse JSON events
+                    try:
+                        event = json.loads(line_str)
+                        event_type, stage = classify_event(event)
+
+                        if stage == ChatStreamStage.EXPANDABLE:
+                            # Stage 1: System events go to expandable (NOT persisted)
+                            chunk_event = ChatStreamChunkEvent(
+                                content=line_str,
+                                event_type=event_type,
+                                stage=stage,
+                                raw_json=event,
+                            )
+                            yield f"event: {event_type.value}\ndata: {chunk_event.model_dump_json()}\n\n"
+
+                        else:
+                            # Stage 2: Assistant/Result events (persisted)
+                            if event_type == ChatStreamEventType.ASSISTANT:
+                                content = extract_assistant_content(event)
+                                stage2_content = content
+                                chunk_event = ChatStreamChunkEvent(
+                                    content=content,
+                                    event_type=event_type,
+                                    stage=stage,
+                                    raw_json=event,
+                                )
+                                yield f"event: {event_type.value}\ndata: {chunk_event.model_dump_json()}\n\n"
+
+                            elif event_type == ChatStreamEventType.RESULT:
+                                # Extract final answer and metadata
+                                result_content = event.get("result", "")
+                                if result_content:
+                                    stage2_content = result_content
+                                metadata = extract_metadata(event)
+                                chunk_event = ChatStreamChunkEvent(
+                                    content=result_content,
+                                    event_type=event_type,
+                                    stage=stage,
+                                    raw_json=event,
+                                )
+                                yield f"event: {event_type.value}\ndata: {chunk_event.model_dump_json()}\n\n"
+
+                    except json.JSONDecodeError:
+                        # If JSON parsing fails in JSON mode, treat as plain text
+                        logger.warning(
+                            "Failed to parse JSON in JSON mode for message %s: %s",
+                            assistant_message_id,
+                            line_str[:100],
+                        )
+                        chunk_event = ChatStreamChunkEvent(
+                            content=line_str,
+                            event_type=ChatStreamEventType.INIT_TEXT,
+                            stage=ChatStreamStage.EXPANDABLE,
+                            raw_json=None,
+                        )
+                        yield f"event: {ChatStreamEventType.INIT_TEXT.value}\ndata: {chunk_event.model_dump_json()}\n\n"
+
+                else:
+                    # Plain text mode (initialization) - Stage 1 (NOT persisted)
+                    chunk_event = ChatStreamChunkEvent(
+                        content=line_str,
+                        event_type=ChatStreamEventType.INIT_TEXT,
+                        stage=ChatStreamStage.EXPANDABLE,
+                        raw_json=None,
+                    )
+                    yield f"event: {ChatStreamEventType.INIT_TEXT.value}\ndata: {chunk_event.model_dump_json()}\n\n"
+
                 last_event_time = time.time()
 
             # Wait for process to complete
@@ -463,23 +638,30 @@ async def stream_claude_mpm_response(
             await process.wait()
             raise
 
-        # Calculate duration
+        # Calculate duration (fallback if not in metadata)
         duration_ms = int((time.time() - start_time) * 1000)
 
-        # Yield complete event with final content
+        # Use metadata values if available, otherwise use fallbacks
+        final_token_count = metadata.token_count if metadata else None
+        final_duration_ms = metadata.duration_ms if metadata else duration_ms
+
+        # Yield complete event with Stage 2 content only (this is what gets persisted)
         complete_event = ChatStreamCompleteEvent(
             message_id=assistant_message_id,
-            content=accumulated_content,
-            token_count=token_count,
-            duration_ms=duration_ms,
+            content=stage2_content,
+            metadata=metadata,
+            # Legacy fields for backwards compatibility
+            token_count=final_token_count,
+            duration_ms=final_duration_ms,
         )
         yield f"event: complete\ndata: {complete_event.model_dump_json()}\n\n"
 
         logger.info(
-            "Completed streaming for message %s (tokens=%d, duration=%dms)",
+            "Completed streaming for message %s (tokens=%s, duration=%sms, cost=$%s)",
             assistant_message_id,
-            token_count,
-            duration_ms,
+            final_token_count,
+            final_duration_ms,
+            metadata.cost_usd if metadata else None,
         )
 
     except (

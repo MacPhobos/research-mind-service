@@ -3,9 +3,62 @@
 from __future__ import annotations
 
 from datetime import datetime
+from enum import Enum
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+
+# ---------------------------------------------------------------------------
+# Two-Stage Streaming Enums
+# ---------------------------------------------------------------------------
+
+
+class ChatStreamEventType(str, Enum):
+    """SSE event types for two-stage streaming.
+
+    Stage 1 (Expandable): Process output shown in collapsible accordion
+    - INIT_TEXT: Plain text initialization (claude-mpm banner, agent sync, etc.)
+    - SYSTEM_INIT: JSON system initialization event (cwd, tools, model, etc.)
+    - SYSTEM_HOOK: JSON hook start/complete events
+    - STREAM_TOKEN: Token-by-token streaming delta (if available)
+
+    Stage 2 (Primary): Final answer shown prominently
+    - ASSISTANT: Complete assistant message
+    - RESULT: Final result with full metadata
+
+    Lifecycle:
+    - START: Session started, message_id returned
+    - ERROR: Error occurred during processing
+    - HEARTBEAT: Keep-alive ping
+    """
+
+    START = "start"
+    INIT_TEXT = "init_text"  # Plain text initialization (Stage 1)
+    SYSTEM_INIT = "system_init"  # JSON system init event (Stage 1)
+    SYSTEM_HOOK = "system_hook"  # JSON hook events (Stage 1)
+    STREAM_TOKEN = "stream_token"  # Token-by-token if available (Stage 1)
+    ASSISTANT = "assistant"  # Complete assistant message (Stage 2)
+    RESULT = "result"  # Final result with metadata (Stage 2)
+    ERROR = "error"
+    HEARTBEAT = "heartbeat"
+
+
+class ChatStreamStage(int, Enum):
+    """Stage classification for SSE events.
+
+    EXPANDABLE (1): Full process output (plain text + system JSON)
+        - Streamed to UI in real-time
+        - Shown in collapsible accordion
+        - NOT persisted to database
+
+    PRIMARY (2): Final answer (assistant + result)
+        - Shown prominently in chat
+        - Persisted to database
+    """
+
+    EXPANDABLE = 1  # Stage 1: Process output (not persisted)
+    PRIMARY = 2  # Stage 2: Final answer (persisted)
 
 
 class SendChatMessageRequest(BaseModel):
@@ -46,8 +99,24 @@ class ChatMessageListResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# SSE Event Schemas
+# SSE Event Schemas (Two-Stage Streaming)
 # ---------------------------------------------------------------------------
+
+
+class ChatStreamResultMetadata(BaseModel):
+    """Metadata extracted from claude-mpm result event.
+
+    Contains token usage, timing, and cost information from the Claude API.
+    """
+
+    token_count: int | None = None  # output_tokens from usage
+    input_tokens: int | None = None  # input_tokens from usage
+    cache_read_tokens: int | None = None  # cache_read_input_tokens
+    duration_ms: int | None = None  # Total duration from result event
+    duration_api_ms: int | None = None  # API call duration
+    cost_usd: float | None = None  # total_cost_usd from result event
+    session_id: str | None = None  # Claude session ID for correlation
+    num_turns: int | None = None  # Number of conversation turns
 
 
 class ChatStreamStartEvent(BaseModel):
@@ -58,17 +127,30 @@ class ChatStreamStartEvent(BaseModel):
 
 
 class ChatStreamChunkEvent(BaseModel):
-    """Event sent for each content chunk."""
+    """Two-stage streaming event with stage classification.
+
+    Replaces the old simple chunk event format. Each chunk is now classified
+    into a stage (EXPANDABLE or PRIMARY) for proper UI routing.
+    """
 
     content: str
+    event_type: ChatStreamEventType
+    stage: ChatStreamStage
+    raw_json: dict[str, Any] | None = None  # Original JSON event for debugging
 
 
 class ChatStreamCompleteEvent(BaseModel):
-    """Event sent when streaming completes successfully."""
+    """Event sent when streaming completes successfully.
+
+    Only stage2_content (the final answer) is persisted to the database.
+    Stage 1 content is ephemeral and only shown in the expandable accordion.
+    """
 
     message_id: str
     status: Literal["completed"] = "completed"
-    content: str
+    content: str  # Final answer (stage2_content) - this is what gets persisted
+    metadata: ChatStreamResultMetadata | None = None
+    # Legacy fields for backwards compatibility during transition
     token_count: int | None = None
     duration_ms: int | None = None
 

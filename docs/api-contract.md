@@ -1,6 +1,6 @@
 # research-mind API Contract
 
-> **Version**: 1.3.0
+> **Version**: 1.4.0
 > **Last Updated**: 2026-02-03
 > **Status**: FROZEN - Changes require version bump and UI sync
 
@@ -949,13 +949,156 @@ curl -X DELETE http://localhost:15010/api/v1/sessions/{session_id}/chat/{message
 
 ---
 
-### Stream Chat Response (Planned - Phase 2)
+### Stream Chat Response
 
 #### `GET /api/v1/sessions/{session_id}/chat/stream/{message_id}`
 
-Stream the AI response for a chat message using Server-Sent Events.
+Stream the AI response for a chat message using Server-Sent Events (SSE).
 
-> **Status**: Not yet implemented. Planned for Phase 2.
+**Two-Stage Response Streaming**
+
+The streaming response is divided into two stages:
+
+| Stage | Name | Description | Persisted |
+|-------|------|-------------|-----------|
+| 1 | EXPANDABLE | Plain text initialization + system events | No |
+| 2 | PRIMARY | Final answer from assistant/result events | Yes |
+
+**Stage 1 (Expandable)**: Full process output shown in collapsible accordion
+- Plain text initialization (claude-mpm banner, agent sync, etc.)
+- System JSON events (initialization, hooks)
+- NOT persisted to database
+
+**Stage 2 (Primary)**: Final answer shown prominently
+- Assistant message content
+- Result with metadata (tokens, duration, cost)
+- Persisted to database
+
+**Path Parameters**
+
+| Parameter    | Type   | Description |
+| ------------ | ------ | ----------- |
+| `session_id` | string | Session UUID |
+| `message_id` | string | Message UUID (from POST /chat response) |
+
+**Response**: `200 OK` with `Content-Type: text/event-stream`
+
+**SSE Event Types**
+
+| Event Type | Stage | Description |
+|------------|-------|-------------|
+| `start` | - | Session started, message_id returned |
+| `chunk` | 1 or 2 | Streaming content with stage classification |
+| `complete` | - | Streaming finished, final content + metadata |
+| `error` | - | Error occurred during processing |
+| `heartbeat` | - | Keep-alive ping (every 15 seconds) |
+
+**Chunk Event Schema**
+
+```typescript
+interface ChatStreamChunkEvent {
+  content: string;                    // Line content
+  event_type: ChatStreamEventType;    // Classification of this chunk
+  stage: 1 | 2;                       // EXPANDABLE (1) or PRIMARY (2)
+  raw_json?: object;                  // Original JSON event (if applicable)
+}
+
+enum ChatStreamEventType {
+  START = "start",
+  INIT_TEXT = "init_text",       // Plain text initialization (Stage 1)
+  SYSTEM_INIT = "system_init",   // JSON system init event (Stage 1)
+  SYSTEM_HOOK = "system_hook",   // JSON hook events (Stage 1)
+  STREAM_TOKEN = "stream_token", // Token streaming if available (Stage 1)
+  ASSISTANT = "assistant",       // Complete assistant message (Stage 2)
+  RESULT = "result",             // Final result with metadata (Stage 2)
+  ERROR = "error",
+  HEARTBEAT = "heartbeat",
+}
+```
+
+**Complete Event Schema**
+
+```typescript
+interface ChatStreamCompleteEvent {
+  message_id: string;
+  status: "completed";
+  content: string;                    // Final answer (Stage 2 content only)
+  metadata?: ChatStreamResultMetadata;
+  token_count?: number;               // Legacy field
+  duration_ms?: number;               // Legacy field
+}
+
+interface ChatStreamResultMetadata {
+  token_count?: number;        // output_tokens
+  input_tokens?: number;       // input_tokens
+  cache_read_tokens?: number;  // cache_read_input_tokens
+  duration_ms?: number;        // Total duration
+  duration_api_ms?: number;    // API call duration
+  cost_usd?: number;           // total_cost_usd
+  session_id?: string;         // Claude session ID
+  num_turns?: number;          // Number of turns
+}
+```
+
+**Example SSE Stream**
+
+```
+event: start
+data: {"message_id":"abc123","status":"streaming"}
+
+event: chunk
+data: {"content":"Syncing agents...","event_type":"init_text","stage":1,"raw_json":null}
+
+event: chunk
+data: {"content":"{\"type\":\"system\",\"subtype\":\"init\"...}","event_type":"system_init","stage":1,"raw_json":{...}}
+
+event: chunk
+data: {"content":"The answer is 4.","event_type":"assistant","stage":2,"raw_json":{...}}
+
+event: chunk
+data: {"content":"The answer is 4.","event_type":"result","stage":2,"raw_json":{...}}
+
+event: complete
+data: {"message_id":"abc123","status":"completed","content":"The answer is 4.","metadata":{"token_count":15,"duration_ms":3064,"cost_usd":0.17}}
+```
+
+**Error Event Schema**
+
+```typescript
+interface ChatStreamErrorEvent {
+  message_id: string;
+  status: "error";
+  error: string;
+}
+```
+
+**curl**:
+```bash
+curl -N "http://localhost:15010/api/v1/sessions/{session_id}/chat/stream/{message_id}"
+```
+
+**JavaScript EventSource**:
+```javascript
+const eventSource = new EventSource(streamUrl);
+let stage1Content = '';
+let stage2Content = '';
+
+eventSource.addEventListener('chunk', (e) => {
+  const data = JSON.parse(e.data);
+  if (data.stage === 1) {
+    stage1Content += data.content + '\n';  // Expandable accordion
+  } else {
+    stage2Content = data.content;           // Primary display
+  }
+});
+
+eventSource.addEventListener('complete', (e) => {
+  const data = JSON.parse(e.data);
+  console.log('Final answer:', data.content);
+  console.log('Metadata:', data.metadata);
+  eventSource.close();
+});
+```
 
 ---
 
@@ -1185,6 +1328,7 @@ All endpoints are currently open. Authentication will be added in a future versi
 | 1.1.0   | 2026-02-01 | Updated to match implemented endpoints: workspace indexing (subprocess-based), audit logs, index status. Marked search/analysis as planned. |
 | 1.2.0   | 2026-02-03 | Added Content Management endpoints: POST/GET/DELETE content items with support for text, file_upload, url, git_repo, mcp_source types. Added CONTENT_NOT_FOUND and INVALID_METADATA error codes. |
 | 1.3.0   | 2026-02-03 | Added Chat endpoints: POST/GET/DELETE chat messages with session-scoped history. Added SESSION_NOT_INDEXED, CHAT_MESSAGE_NOT_FOUND, CLAUDE_MPM_NOT_AVAILABLE, CLAUDE_MPM_TIMEOUT error codes. SSE streaming endpoint marked as planned (Phase 2). |
+| 1.4.0   | 2026-02-03 | Implemented Two-Stage Response Streaming: SSE events now include event_type, stage classification, and raw_json. Stage 1 (EXPANDABLE) for initialization/system events (not persisted). Stage 2 (PRIMARY) for assistant/result events (persisted). Added ChatStreamResultMetadata with token counts, duration, and cost. New event types: init_text, system_init, system_hook, stream_token, assistant, result. |
 
 ---
 
