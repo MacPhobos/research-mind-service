@@ -7,9 +7,13 @@ All settings have sensible defaults for local development.
 from __future__ import annotations
 
 import json
+import logging
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Valid Python logging levels
+VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
 
 
 class Settings(BaseSettings):
@@ -26,6 +30,34 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 15010
     debug: bool = False
+
+    # --- Logging ---
+    log_level: str = "INFO"
+
+    @field_validator("log_level")
+    @classmethod
+    def validate_log_level(cls, v: str) -> str:
+        """Validate and normalize log level to uppercase.
+
+        Falls back to INFO if an invalid level is provided.
+        """
+        normalized = v.upper().strip()
+        if normalized not in VALID_LOG_LEVELS:
+            # Log a warning (to stderr since logging may not be configured yet)
+            import sys
+
+            print(
+                f"WARNING: Invalid LOG_LEVEL '{v}'. "
+                f"Valid levels are: {', '.join(sorted(VALID_LOG_LEVELS))}. "
+                "Falling back to INFO.",
+                file=sys.stderr,
+            )
+            return "INFO"
+        return normalized
+
+    def get_log_level_int(self) -> int:
+        """Return the integer value of the configured log level."""
+        return getattr(logging, self.log_level, logging.INFO)
 
     # --- Database ---
     # Use postgresql+psycopg:// dialect (psycopg v3 driver)
