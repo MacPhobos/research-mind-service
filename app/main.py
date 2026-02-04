@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 import os
-import subprocess
+import shutil
 import time
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
@@ -47,19 +47,13 @@ logger = logging.getLogger(__name__)
 def _verify_mcp_cli() -> str | None:
     """Check that mcp-vector-search CLI is available on PATH.
 
-    Returns the version string on success, or None if the tool is missing.
+    Returns the path to the executable on success, or None if the tool is missing.
     """
-    try:
-        result = subprocess.run(
-            ["mcp-vector-search", "--version"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        version = result.stdout.strip() or result.stderr.strip()
-        return version if result.returncode == 0 else None
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return None
+    path = shutil.which("mcp-vector-search")
+    if path:
+        logger.debug("mcp-vector-search found at: %s", path)
+        return path
+    return None
 
 
 @asynccontextmanager
@@ -88,11 +82,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     cli_version = _verify_mcp_cli()
     if cli_version:
-        logger.info("mcp-vector-search CLI detected: %s", cli_version)
+        logger.info("mcp-vector-search CLI detected at: %s", cli_version)
     else:
         logger.warning(
             "mcp-vector-search CLI not found on PATH. "
-            "Indexing features will be unavailable."
+            "Indexing features will be unavailable. "
+            "PATH: %s", os.environ.get("PATH", "")
         )
 
     # Ensure content sandbox root directory exists
