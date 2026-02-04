@@ -573,6 +573,11 @@ async def stream_claude_mpm_response(
                             if event_type == ChatStreamEventType.ASSISTANT:
                                 content = extract_assistant_content(event)
                                 stage2_content = content
+                                logger.info(
+                                    "ASSISTANT event: extracted stage2_content for message %s (length=%d)",
+                                    assistant_message_id,
+                                    len(stage2_content),
+                                )
                                 chunk_event = ChatStreamChunkEvent(
                                     content=content,
                                     event_type=event_type,
@@ -586,6 +591,16 @@ async def stream_claude_mpm_response(
                                 result_content = event.get("result", "")
                                 if result_content:
                                     stage2_content = result_content
+                                    logger.info(
+                                        "RESULT event: extracted stage2_content for message %s (length=%d)",
+                                        assistant_message_id,
+                                        len(stage2_content),
+                                    )
+                                else:
+                                    logger.warning(
+                                        "RESULT event: empty result field for message %s",
+                                        assistant_message_id,
+                                    )
                                 metadata = extract_metadata(event)
                                 chunk_event = ChatStreamChunkEvent(
                                     content=result_content,
@@ -644,6 +659,14 @@ async def stream_claude_mpm_response(
         # Use metadata values if available, otherwise use fallbacks
         final_token_count = metadata.token_count if metadata else None
         final_duration_ms = metadata.duration_ms if metadata else duration_ms
+
+        # Log final stage2_content before creating complete event
+        logger.info(
+            "Creating complete event for message %s: stage2_content length=%d, first_100=%s",
+            assistant_message_id,
+            len(stage2_content),
+            repr(stage2_content[:100]) if stage2_content else "<empty>",
+        )
 
         # Yield complete event with Stage 2 content only (this is what gets persisted)
         complete_event = ChatStreamCompleteEvent(

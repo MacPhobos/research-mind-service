@@ -233,6 +233,12 @@ async def stream_chat_response(
                                 final_content = complete_data.get("content", "")
                                 final_token_count = complete_data.get("token_count")
                                 final_duration_ms = complete_data.get("duration_ms")
+                                logger.info(
+                                    "Parsed complete event for message %s: content_length=%d, first_100=%s",
+                                    assistant_msg_id,
+                                    len(final_content),
+                                    repr(final_content[:100]) if final_content else "<empty>",
+                                )
                                 break
                     except json.JSONDecodeError as e:
                         logger.error(f"Failed to parse complete event: {e}, event={event[:200]}")
@@ -291,6 +297,11 @@ async def stream_chat_response(
                                 error_message or "Unknown error",
                             )
                         else:
+                            logger.info(
+                                "Saving message %s to database: content_length=%d",
+                                assistant_msg_id,
+                                len(final_content),
+                            )
                             chat_service.complete_message(
                                 final_db,
                                 final_message,
