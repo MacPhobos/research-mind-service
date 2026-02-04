@@ -281,6 +281,23 @@ def delete_message(db: DbSession, session_id: str, message_id: str) -> bool:
     return True
 
 
+def clear_chat_history(db: DbSession, session_id: str) -> int:
+    """Delete all chat messages for a session.
+
+    Args:
+        db: Database session.
+        session_id: Session UUID.
+
+    Returns:
+        Number of messages deleted.
+    """
+    result = db.query(ChatMessage).filter(ChatMessage.session_id == session_id).delete()
+    db.commit()
+
+    logger.info("Cleared %d messages from session %s", result, session_id)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # claude-mpm Streaming Integration
 # ---------------------------------------------------------------------------

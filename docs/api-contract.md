@@ -1,6 +1,6 @@
 # research-mind API Contract
 
-> **Version**: 1.4.0
+> **Version**: 1.5.0
 > **Last Updated**: 2026-02-03
 > **Status**: FROZEN - Changes require version bump and UI sync
 
@@ -949,6 +949,47 @@ curl -X DELETE http://localhost:15010/api/v1/sessions/{session_id}/chat/{message
 
 ---
 
+### Clear Chat History
+
+#### `DELETE /api/v1/sessions/{session_id}/chat`
+
+Delete all chat messages for a session.
+
+**Path Parameters**
+
+| Parameter    | Type   | Description  |
+| ------------ | ------ | ------------ |
+| `session_id` | string | Session UUID |
+
+**Response**: `204 No Content`
+
+No response body on success.
+
+**Error Responses**
+
+| Status | Code              | Description            |
+| ------ | ----------------- | ---------------------- |
+| 404    | SESSION_NOT_FOUND | Session does not exist |
+
+**Examples**
+
+```json
+// Error Response (404)
+{
+  "error": {
+    "code": "SESSION_NOT_FOUND",
+    "message": "Session 'invalid-id' not found"
+  }
+}
+```
+
+**curl**:
+```bash
+curl -X DELETE http://localhost:15010/api/v1/sessions/{session_id}/chat
+```
+
+---
+
 ### Stream Chat Response
 
 #### `GET /api/v1/sessions/{session_id}/chat/stream/{message_id}`
@@ -1329,6 +1370,7 @@ All endpoints are currently open. Authentication will be added in a future versi
 | 1.2.0   | 2026-02-03 | Added Content Management endpoints: POST/GET/DELETE content items with support for text, file_upload, url, git_repo, mcp_source types. Added CONTENT_NOT_FOUND and INVALID_METADATA error codes. |
 | 1.3.0   | 2026-02-03 | Added Chat endpoints: POST/GET/DELETE chat messages with session-scoped history. Added SESSION_NOT_INDEXED, CHAT_MESSAGE_NOT_FOUND, CLAUDE_MPM_NOT_AVAILABLE, CLAUDE_MPM_TIMEOUT error codes. SSE streaming endpoint marked as planned (Phase 2). |
 | 1.4.0   | 2026-02-03 | Implemented Two-Stage Response Streaming: SSE events now include event_type, stage classification, and raw_json. Stage 1 (EXPANDABLE) for initialization/system events (not persisted). Stage 2 (PRIMARY) for assistant/result events (persisted). Added ChatStreamResultMetadata with token counts, duration, and cost. New event types: init_text, system_init, system_hook, stream_token, assistant, result. |
+| 1.5.0   | 2026-02-04 | Added Clear Chat History endpoint: DELETE /api/v1/sessions/{session_id}/chat to delete all chat messages for a session. |
 
 ---
 

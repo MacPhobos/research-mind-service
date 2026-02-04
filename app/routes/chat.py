@@ -524,3 +524,29 @@ def delete_chat_message(
                 }
             },
         )
+
+
+@router.delete(
+    "/{session_id}/chat",
+    status_code=204,
+    response_model=None,
+)
+def clear_chat_history(
+    session_id: str,
+    db: Session = Depends(get_db),
+) -> None:
+    """Clear all chat messages for a session."""
+    # Verify session exists
+    session = chat_service.get_session_by_id(db, session_id)
+    if session is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": {
+                    "code": "SESSION_NOT_FOUND",
+                    "message": f"Session '{session_id}' not found",
+                }
+            },
+        )
+
+    chat_service.clear_chat_history(db, session_id)
