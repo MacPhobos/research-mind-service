@@ -212,6 +212,10 @@ async def stream_chat_response(
 
         Updates the assistant message in the database when streaming
         completes or fails.
+
+        IMPORTANT: Content is extracted from 'assistant' and 'result' events
+        as they arrive, NOT from the 'complete' event. This ensures content
+        is captured even if the client disconnects before complete event.
         """
         final_content = ""
         final_token_count: int | None = None
@@ -223,26 +227,78 @@ async def stream_chat_response(
             async for event in chat_service.stream_claude_mpm_response(
                 workspace_path, user_content, assistant_msg_id
             ):
-                # Parse complete event to extract final data
-                if event.startswith("event: complete\n"):
-                    # Extract data from complete event using robust line-by-line parsing
+                # Extract content from assistant event AS IT ARRIVES
+                # This ensures content is captured even if client disconnects
+                if event.startswith("event: assistant\n"):
+                    try:
+                        for line in event.split("\n"):
+                            if line.startswith("data: "):
+                                data_json = line[6:]  # Remove "data: " prefix
+                                chunk_data = json.loads(data_json)
+                                content = chunk_data.get("content", "")
+                                if content:
+                                    final_content = content
+                                    logger.debug(
+                                        "Captured content from assistant event: length=%d",
+                                        len(final_content),
+                                    )
+                                break
+                    except json.JSONDecodeError as e:
+                        logger.warning(
+                            "Failed to parse assistant event: %s, event=%s",
+                            e,
+                            event[:200],
+                        )
+
+                # Extract content from result event (backup/alternative source)
+                elif event.startswith("event: result\n"):
+                    try:
+                        for line in event.split("\n"):
+                            if line.startswith("data: "):
+                                data_json = line[6:]  # Remove "data: " prefix
+                                chunk_data = json.loads(data_json)
+                                result_content = chunk_data.get("result", "")
+                                if result_content and not final_content:
+                                    final_content = result_content
+                                    logger.debug(
+                                        "Captured content from result event: length=%d",
+                                        len(final_content),
+                                    )
+                                break
+                    except json.JSONDecodeError as e:
+                        logger.warning(
+                            "Failed to parse result event: %s, event=%s",
+                            e,
+                            event[:200],
+                        )
+
+                # Parse complete event for metadata only (token_count, duration_ms)
+                # Content should already be captured from assistant/result events
+                elif event.startswith("event: complete\n"):
                     try:
                         for line in event.split("\n"):
                             if line.startswith("data: "):
                                 data_json = line[6:]  # Remove "data: " prefix
                                 complete_data = json.loads(data_json)
-                                final_content = complete_data.get("content", "")
+                                # Only use content from complete if not already captured
+                                if not final_content:
+                                    final_content = complete_data.get("content", "")
                                 final_token_count = complete_data.get("token_count")
                                 final_duration_ms = complete_data.get("duration_ms")
                                 logger.info(
-                                    "Parsed complete event for message %s: content_length=%d, first_100=%s",
+                                    "Parsed complete event for message %s: content_length=%d, token_count=%s",
                                     assistant_msg_id,
                                     len(final_content),
-                                    repr(final_content[:100]) if final_content else "<empty>",
+                                    final_token_count,
                                 )
                                 break
                     except json.JSONDecodeError as e:
-                        logger.error(f"Failed to parse complete event: {e}, event={event[:200]}")
+                        logger.error(
+                            "Failed to parse complete event: %s, event=%s",
+                            e,
+                            event[:200],
+                        )
+
                 elif event.startswith("event: error\n"):
                     # Extract error message using robust line-by-line parsing
                     try:

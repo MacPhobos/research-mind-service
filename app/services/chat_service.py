@@ -596,7 +596,22 @@ async def stream_claude_mpm_response(
                         else:
                             # Stage 2: Assistant/Result events (persisted)
                             if event_type == ChatStreamEventType.ASSISTANT:
+                                # Debug: capture JSON structure before extraction
+                                logger.debug(
+                                    "ASSISTANT event for message %s: keys=%s, has_message=%s, event_preview=%s",
+                                    assistant_message_id,
+                                    list(event.keys()),
+                                    "message" in event,
+                                    json.dumps(event)[:1000],
+                                )
                                 content = extract_assistant_content(event)
+                                # Debug: capture extraction result
+                                logger.debug(
+                                    "ASSISTANT extracted content for message %s: length=%d, empty=%s",
+                                    assistant_message_id,
+                                    len(content),
+                                    content == "",
+                                )
                                 stage2_content = content
                                 logger.info(
                                     "ASSISTANT event: extracted stage2_content for message %s (length=%d)",
@@ -612,6 +627,13 @@ async def stream_claude_mpm_response(
                                 yield f"event: {event_type.value}\ndata: {chunk_event.model_dump_json()}\n\n"
 
                             elif event_type == ChatStreamEventType.RESULT:
+                                # Debug: capture JSON structure for result event
+                                logger.debug(
+                                    "RESULT event for message %s: keys=%s, result_preview=%s",
+                                    assistant_message_id,
+                                    list(event.keys()),
+                                    repr(event.get("result", ""))[:500] if event.get("result") else "<no result field>",
+                                )
                                 # Extract final answer and metadata
                                 result_content = event.get("result", "")
                                 if result_content:
@@ -698,6 +720,16 @@ async def stream_claude_mpm_response(
                 "using collected plain text output (length=%d)",
                 assistant_message_id,
                 len(stage2_content),
+            )
+
+        # Error logging if stage2_content is still empty
+        if not stage2_content:
+            logger.error(
+                "EMPTY CONTENT at stream completion for message %s: "
+                "stage2_content is empty, all_text_output has %d lines (total %d chars)",
+                assistant_message_id,
+                len(all_text_output),
+                sum(len(line) for line in all_text_output),
             )
 
         # Log final stage2_content before creating complete event
