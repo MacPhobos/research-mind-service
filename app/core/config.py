@@ -88,5 +88,13 @@ class Settings(BaseSettings):
     secret_key: str = "dev-secret-change-in-production"
     algorithm: str = "HS256"
 
+    # --- claude-mpm Integration ---
+    # Maximum time (seconds) to wait for claude-mpm response
+    claude_mpm_timeout_seconds: int = 300  # 5 minutes
+    # Optional explicit path to claude-mpm CLI (uses PATH if None)
+    claude_mpm_cli_path: str | None = None
+    # SSE heartbeat interval (seconds) to prevent proxy timeouts
+    sse_heartbeat_interval_seconds: int = 15
+
 
 settings = Settings()

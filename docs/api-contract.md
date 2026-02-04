@@ -1,6 +1,6 @@
 # research-mind API Contract
 
-> **Version**: 1.2.0
+> **Version**: 1.3.0
 > **Last Updated**: 2026-02-03
 > **Status**: FROZEN - Changes require version bump and UI sync
 
@@ -17,14 +17,15 @@ This document defines the API contract between `research-mind-service` (FastAPI 
 5. [Sessions](#sessions)
 6. [Content Management](#content-management)
 7. [Workspace Indexing](#workspace-indexing)
-8. [Audit Logs](#audit-logs)
-9. [Search (Planned)](#search-planned)
-10. [Analysis (Planned)](#analysis-planned)
-11. [Pagination](#pagination)
-12. [Error Handling](#error-handling)
-13. [Status Codes](#status-codes)
-14. [CORS Configuration](#cors-configuration)
-15. [Authentication](#authentication)
+8. [Chat](#chat)
+9. [Audit Logs](#audit-logs)
+10. [Search (Planned)](#search-planned)
+11. [Analysis (Planned)](#analysis-planned)
+12. [Pagination](#pagination)
+13. [Error Handling](#error-handling)
+14. [Status Codes](#status-codes)
+15. [CORS Configuration](#cors-configuration)
+16. [Authentication](#authentication)
 
 ---
 
@@ -726,6 +727,245 @@ curl http://localhost:15010/api/v1/workspaces/{session_id}/index/status
 
 ---
 
+## Chat
+
+Chat messages allow users to query session content using AI. Each session maintains its own chat history.
+
+### Chat Message Schema
+
+```typescript
+interface ChatMessage {
+  message_id: string;           // UUID
+  session_id: string;           // Parent session UUID
+  role: "user" | "assistant";   // Message author
+  content: string;              // Message content
+  status: "pending" | "streaming" | "completed" | "error";
+  error_message?: string;       // Error details if status is "error"
+  created_at: string;           // ISO 8601 timestamp
+  completed_at?: string;        // ISO 8601 timestamp (when response finished)
+  token_count?: number;         // Approximate token count
+  duration_ms?: number;         // Response generation time
+  metadata_json?: object;       // Additional metadata (model, etc.)
+}
+```
+
+### Send Chat Message
+
+#### `POST /api/v1/sessions/{session_id}/chat`
+
+Send a new chat message and get a stream URL for the response.
+
+**Path Parameters**
+
+| Parameter   | Type   | Description |
+| ----------- | ------ | ----------- |
+| `session_id` | string | Session UUID |
+
+**Request Body**
+
+```json
+{
+  "content": "What authentication patterns are used in this codebase?"
+}
+```
+
+| Field | Type | Required | Constraints |
+|-------|------|----------|-------------|
+| `content` | string | yes | 1-10000 characters |
+
+**Response** `201 Created`
+
+```json
+{
+  "message_id": "c1d2e3f4-g5h6-7890-ijkl-mn1234567890",
+  "session_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "role": "user",
+  "content": "What authentication patterns are used in this codebase?",
+  "status": "pending",
+  "created_at": "2026-02-03T10:30:00Z",
+  "stream_url": "/api/v1/sessions/a1b2c3d4.../chat/stream/c1d2e3f4..."
+}
+```
+
+**Response** `404 Not Found` - Session not found
+
+```json
+{
+  "detail": {
+    "error": {
+      "code": "SESSION_NOT_FOUND",
+      "message": "Session 'nonexistent-id' not found"
+    }
+  }
+}
+```
+
+**Response** `400 Bad Request` - Session not indexed
+
+```json
+{
+  "detail": {
+    "error": {
+      "code": "SESSION_NOT_INDEXED",
+      "message": "Session must be indexed before chat is available"
+    }
+  }
+}
+```
+
+**curl**:
+```bash
+curl -X POST http://localhost:15010/api/v1/sessions/{session_id}/chat \
+  -H "Content-Type: application/json" \
+  -d '{"content": "What authentication patterns are used?"}'
+```
+
+---
+
+### List Chat Messages
+
+#### `GET /api/v1/sessions/{session_id}/chat`
+
+List all chat messages for a session with pagination.
+
+**Path Parameters**
+
+| Parameter   | Type   | Description |
+| ----------- | ------ | ----------- |
+| `session_id` | string | Session UUID |
+
+**Query Parameters**
+
+| Parameter | Type    | Default | Description |
+| --------- | ------- | ------- | ----------- |
+| `limit`   | integer | 50      | Items per page |
+| `offset`  | integer | 0       | Starting position |
+
+**Response** `200 OK`
+
+```json
+{
+  "messages": [
+    {
+      "message_id": "c1d2e3f4-g5h6-7890-ijkl-mn1234567890",
+      "session_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "role": "user",
+      "content": "What patterns are used?",
+      "status": "completed",
+      "created_at": "2026-02-03T10:30:00Z"
+    },
+    {
+      "message_id": "d2e3f4g5-h6i7-8901-jklm-no2345678901",
+      "session_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "role": "assistant",
+      "content": "Based on my analysis, the codebase uses...",
+      "status": "completed",
+      "created_at": "2026-02-03T10:30:05Z",
+      "completed_at": "2026-02-03T10:30:12Z",
+      "token_count": 542,
+      "duration_ms": 7000
+    }
+  ],
+  "count": 2
+}
+```
+
+**Response** `404 Not Found` - Session not found
+
+**curl**:
+```bash
+curl "http://localhost:15010/api/v1/sessions/{session_id}/chat?limit=50&offset=0"
+```
+
+---
+
+### Get Chat Message
+
+#### `GET /api/v1/sessions/{session_id}/chat/{message_id}`
+
+Get a single chat message by ID.
+
+**Path Parameters**
+
+| Parameter    | Type   | Description |
+| ------------ | ------ | ----------- |
+| `session_id` | string | Session UUID |
+| `message_id` | string | Message UUID |
+
+**Response** `200 OK` - ChatMessage object
+
+**Response** `404 Not Found` - Message not found
+
+```json
+{
+  "detail": {
+    "error": {
+      "code": "CHAT_MESSAGE_NOT_FOUND",
+      "message": "Chat message 'message-id' not found in session 'session-id'"
+    }
+  }
+}
+```
+
+**curl**:
+```bash
+curl http://localhost:15010/api/v1/sessions/{session_id}/chat/{message_id}
+```
+
+---
+
+### Delete Chat Message
+
+#### `DELETE /api/v1/sessions/{session_id}/chat/{message_id}`
+
+Delete a chat message.
+
+**Path Parameters**
+
+| Parameter    | Type   | Description |
+| ------------ | ------ | ----------- |
+| `session_id` | string | Session UUID |
+| `message_id` | string | Message UUID |
+
+**Response** `204 No Content`
+
+**Response** `404 Not Found` - Message not found
+
+```json
+{
+  "detail": {
+    "error": {
+      "code": "CHAT_MESSAGE_NOT_FOUND",
+      "message": "Chat message 'message-id' not found in session 'session-id'"
+    }
+  }
+}
+```
+
+**curl**:
+```bash
+curl -X DELETE http://localhost:15010/api/v1/sessions/{session_id}/chat/{message_id}
+```
+
+---
+
+### Stream Chat Response (Planned - Phase 2)
+
+#### `GET /api/v1/sessions/{session_id}/chat/stream/{message_id}`
+
+Stream the AI response for a chat message using Server-Sent Events.
+
+> **Status**: Not yet implemented. Planned for Phase 2.
+
+---
+
+### Chat Cascade Behavior
+
+When a session is deleted:
+- All associated chat messages are automatically deleted (CASCADE)
+
+---
+
 ## Audit Logs
 
 ### Audit Log Schema
@@ -873,16 +1113,20 @@ Errors are returned inside `detail` (FastAPI HTTPException format):
 
 ### Standard Error Codes
 
-| Code                  | HTTP Status | Description                    |
-| --------------------- | ----------- | ------------------------------ |
-| `VALIDATION_ERROR`    | 400         | Invalid request parameters     |
-| `INVALID_METADATA`    | 400         | Invalid JSON in metadata field |
-| `SESSION_NOT_FOUND`   | 404         | Session UUID not found         |
-| `CONTENT_NOT_FOUND`   | 404         | Content item not found         |
-| `WORKSPACE_NOT_FOUND` | 404         | Workspace directory not found  |
-| `TOOL_NOT_FOUND`      | 500         | mcp-vector-search CLI missing  |
-| `INDEXING_TIMEOUT`    | 500         | Indexing subprocess timed out  |
-| `INTERNAL_ERROR`      | 500         | Unexpected server error        |
+| Code                      | HTTP Status | Description                          |
+| ------------------------- | ----------- | ------------------------------------ |
+| `VALIDATION_ERROR`        | 400         | Invalid request parameters           |
+| `INVALID_METADATA`        | 400         | Invalid JSON in metadata field       |
+| `SESSION_NOT_INDEXED`     | 400         | Session must be indexed before chat  |
+| `SESSION_NOT_FOUND`       | 404         | Session UUID not found               |
+| `CONTENT_NOT_FOUND`       | 404         | Content item not found               |
+| `CHAT_MESSAGE_NOT_FOUND`  | 404         | Chat message UUID not found          |
+| `WORKSPACE_NOT_FOUND`     | 404         | Workspace directory not found        |
+| `TOOL_NOT_FOUND`          | 500         | mcp-vector-search CLI missing        |
+| `INDEXING_TIMEOUT`        | 500         | Indexing subprocess timed out        |
+| `CLAUDE_MPM_NOT_AVAILABLE`| 500         | claude-mpm CLI not found on PATH     |
+| `CLAUDE_MPM_TIMEOUT`      | 500         | claude-mpm response timed out        |
+| `INTERNAL_ERROR`          | 500         | Unexpected server error              |
 
 ---
 
@@ -940,6 +1184,7 @@ All endpoints are currently open. Authentication will be added in a future versi
 | 1.0.0   | 2026-01-31 | Initial contract: Sessions, indexing (planned), search, analysis |
 | 1.1.0   | 2026-02-01 | Updated to match implemented endpoints: workspace indexing (subprocess-based), audit logs, index status. Marked search/analysis as planned. |
 | 1.2.0   | 2026-02-03 | Added Content Management endpoints: POST/GET/DELETE content items with support for text, file_upload, url, git_repo, mcp_source types. Added CONTENT_NOT_FOUND and INVALID_METADATA error codes. |
+| 1.3.0   | 2026-02-03 | Added Chat endpoints: POST/GET/DELETE chat messages with session-scoped history. Added SESSION_NOT_INDEXED, CHAT_MESSAGE_NOT_FOUND, CLAUDE_MPM_NOT_AVAILABLE, CLAUDE_MPM_TIMEOUT error codes. SSE streaming endpoint marked as planned (Phase 2). |
 
 ---
 

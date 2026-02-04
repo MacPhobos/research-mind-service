@@ -21,6 +21,7 @@ from app.db.session import create_all_tables
 from app.middleware.session_validation import SessionValidationMiddleware
 from app.routes import health, api
 from app.routes.audit import router as audit_router
+from app.routes.chat import router as chat_router
 from app.routes.content import router as content_router
 from app.routes.indexing import router as indexing_router
 from app.routes.sessions import router as sessions_router
@@ -178,6 +179,9 @@ app.include_router(content_router)
 
 # Audit log routes (prefixed with /api/v1/sessions)
 app.include_router(audit_router)
+
+# Chat routes (prefixed with /api/v1/sessions)
+app.include_router(chat_router)
 
 
 # Additional health endpoint under API prefix for consistency
