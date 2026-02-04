@@ -205,6 +205,7 @@ async def stream_chat_response(
     workspace_path = session.workspace_path
     user_content = user_message.content
     assistant_msg_id = message_id
+    user_msg_id = user_message.message_id  # Extract user message ID for later use
 
     async def event_generator() -> AsyncGenerator[str, None]:
         """Generate SSE events from claude-mpm subprocess.
@@ -286,6 +287,7 @@ async def stream_chat_response(
             try:
                 SessionLocal = get_session_local()
                 with SessionLocal() as final_db:
+                    # Update assistant message
                     final_message = chat_service.get_message_by_id(
                         final_db, session_id, assistant_msg_id
                     )
@@ -308,6 +310,33 @@ async def stream_chat_response(
                                 final_content,
                                 token_count=final_token_count,
                                 duration_ms=final_duration_ms,
+                            )
+
+                    # Also mark the user message as completed
+                    # Find and update the user message that triggered this response
+                    user_msg = chat_service.get_message_by_id(
+                        final_db, session_id, user_msg_id
+                    )
+                    if user_msg and user_msg.status == "pending":
+                        if error_occurred:
+                            # If assistant failed, mark user message as error too
+                            chat_service.fail_message(
+                                final_db,
+                                user_msg,
+                                "Assistant response failed",
+                            )
+                        else:
+                            # Mark user message as completed
+                            chat_service.complete_message(
+                                final_db,
+                                user_msg,
+                                user_msg.content,  # Keep original content
+                                token_count=None,
+                                duration_ms=None,
+                            )
+                            logger.info(
+                                "Marked user message %s as completed",
+                                user_msg_id,
                             )
             except Exception as db_error:
                 logger.exception(

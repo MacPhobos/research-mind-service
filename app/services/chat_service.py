@@ -468,6 +468,8 @@ async def stream_claude_mpm_response(
     metadata: ChatStreamResultMetadata | None = None
     json_mode = False  # Track when we enter JSON streaming mode
     last_event_time = time.time()
+    # Fallback: collect all plain text output in case JSON events don't provide content
+    all_text_output: list[str] = []
 
     try:
         # Get claude-mpm path
@@ -501,6 +503,15 @@ async def stream_claude_mpm_response(
             workspace_path,
             assistant_message_id,
         )
+        # Debug: log the full command being executed
+        cmd_display = cmd.copy()
+        # Truncate user content in display to avoid huge logs
+        if "-i" in cmd_display:
+            i_idx = cmd_display.index("-i")
+            if i_idx + 1 < len(cmd_display):
+                content = cmd_display[i_idx + 1]
+                cmd_display[i_idx + 1] = f"<user_prompt:{len(content)}chars>"
+        logger.debug("COMMAND: %s", " ".join(cmd_display))
 
         # Yield start event
         start_event = ChatStreamStartEvent(message_id=assistant_message_id)
@@ -547,6 +558,13 @@ async def stream_claude_mpm_response(
                 if not line_str:
                     continue
 
+                # Debug: log every line received from claude-mpm
+                logger.debug(
+                    "RAW LINE from claude-mpm for message %s: %s",
+                    assistant_message_id,
+                    repr(line_str[:200]) if len(line_str) > 200 else repr(line_str),
+                )
+
                 # Detect JSON mode start (line begins with '{')
                 if not json_mode and line_str.startswith("{"):
                     json_mode = True
@@ -557,6 +575,13 @@ async def stream_claude_mpm_response(
                     try:
                         event = json.loads(line_str)
                         event_type, stage = classify_event(event)
+                        logger.debug(
+                            "PARSED JSON event for message %s: type=%s, stage=%s, raw_type=%s",
+                            assistant_message_id,
+                            event_type.value,
+                            stage.value,
+                            event.get("type", "MISSING"),
+                        )
 
                         if stage == ChatStreamStage.EXPANDABLE:
                             # Stage 1: System events go to expandable (NOT persisted)
@@ -612,6 +637,8 @@ async def stream_claude_mpm_response(
 
                     except json.JSONDecodeError:
                         # If JSON parsing fails in JSON mode, treat as plain text
+                        # Also collect for fallback content persistence
+                        all_text_output.append(line_str)
                         logger.warning(
                             "Failed to parse JSON in JSON mode for message %s: %s",
                             assistant_message_id,
@@ -627,6 +654,8 @@ async def stream_claude_mpm_response(
 
                 else:
                     # Plain text mode (initialization) - Stage 1 (NOT persisted)
+                    # Collect text as fallback for content persistence
+                    all_text_output.append(line_str)
                     chunk_event = ChatStreamChunkEvent(
                         content=line_str,
                         event_type=ChatStreamEventType.INIT_TEXT,
@@ -659,6 +688,17 @@ async def stream_claude_mpm_response(
         # Use metadata values if available, otherwise use fallbacks
         final_token_count = metadata.token_count if metadata else None
         final_duration_ms = metadata.duration_ms if metadata else duration_ms
+
+        # Fallback: if stage2_content is empty but we collected plain text, use that
+        if not stage2_content and all_text_output:
+            # Join all collected text lines as the content
+            stage2_content = "\n".join(all_text_output)
+            logger.warning(
+                "FALLBACK: No ASSISTANT/RESULT events received for message %s, "
+                "using collected plain text output (length=%d)",
+                assistant_message_id,
+                len(stage2_content),
+            )
 
         # Log final stage2_content before creating complete event
         logger.info(
