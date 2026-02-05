@@ -337,11 +337,11 @@ class TestBatchAddErrors:
         assert response.status_code == 422
 
     def test_batch_exceeds_max_urls(self, client: TestClient, test_session: dict):
-        """POST with more than 50 URLs returns 422 validation error."""
+        """POST with more than 500 URLs returns 422 validation error."""
         session_id = test_session["session_id"]
 
-        # Create 51 URLs
-        urls = [{"url": f"https://example.com/page{i}"} for i in range(51)]
+        # Create 501 URLs
+        urls = [{"url": f"https://example.com/page{i}"} for i in range(501)]
 
         response = client.post(
             f"/api/v1/sessions/{session_id}/content/batch",

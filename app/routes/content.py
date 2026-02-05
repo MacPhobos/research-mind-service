@@ -131,7 +131,7 @@ def batch_add_content(
 
     Args:
         session_id: Target session ID.
-        request: Batch add request containing list of URLs (1-50).
+        request: Batch add request containing list of URLs (1-500).
 
     Returns:
         BatchContentResponse with per-item results and summary counts.

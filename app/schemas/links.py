@@ -35,7 +35,7 @@ class BatchAddContentRequest(BaseModel):
     """Request body for POST /api/v1/sessions/{session_id}/content/batch."""
 
     urls: list[BatchUrlItem] = Field(
-        ..., min_length=1, max_length=50, description="List of URLs to add (1-50)"
+        ..., min_length=1, max_length=500, description="List of URLs to add (1-500)"
     )
     source_url: str | None = Field(
         default=None,

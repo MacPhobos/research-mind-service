@@ -708,7 +708,7 @@ curl -X POST http://localhost:15010/api/v1/content/extract-links \
 
 #### `POST /api/v1/sessions/{session_id}/content/batch`
 
-Add multiple URL content items to a session in a single request. Supports up to 50 URLs per batch. Duplicate URLs (within the batch or already existing in the session) are detected and skipped.
+Add multiple URL content items to a session in a single request. Supports up to 500 URLs per batch. Duplicate URLs (within the batch or already existing in the session) are detected and skipped.
 
 **Path Parameters**
 
@@ -738,7 +738,7 @@ Add multiple URL content items to a session in a single request. Supports up to 
 
 | Field | Type | Required | Constraints |
 |-------|------|----------|-------------|
-| `urls` | array | yes | 1-50 URL items |
+| `urls` | array | yes | 1-500 URL items |
 | `urls[].url` | string | yes | Valid HTTP/HTTPS URL, max 2048 characters |
 | `urls[].title` | string | no | Optional title override, max 512 characters |
 
@@ -788,7 +788,7 @@ Add multiple URL content items to a session in a single request. Supports up to 
 **Notes**:
 - Duplicate detection checks both within the batch and against existing session content
 - Duplicates are determined by normalized URL (protocol, host, path)
-- Batch size limit is 50 URLs per request
+- Batch size limit is 500 URLs per request
 - URLs that fail validation are marked as `failed` with error details
 
 **Error Responses**
@@ -796,7 +796,7 @@ Add multiple URL content items to a session in a single request. Supports up to 
 | Status | Code | Description |
 |--------|------|-------------|
 | 400 | EMPTY_URL_LIST | The urls array is empty |
-| 400 | TOO_MANY_URLS | More than 50 URLs in the request |
+| 400 | TOO_MANY_URLS | More than 500 URLs in the request |
 | 404 | SESSION_NOT_FOUND | Session does not exist |
 
 ```json
@@ -815,7 +815,7 @@ Add multiple URL content items to a session in a single request. Supports up to 
   "detail": {
     "error": {
       "code": "TOO_MANY_URLS",
-      "message": "Maximum 50 URLs allowed per batch request"
+      "message": "Maximum 500 URLs allowed per batch request"
     }
   }
 }
