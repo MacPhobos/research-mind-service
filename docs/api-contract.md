@@ -1,7 +1,7 @@
 # research-mind API Contract
 
-> **Version**: 1.7.0
-> **Last Updated**: 2026-02-04
+> **Version**: 1.8.0
+> **Last Updated**: 2026-02-05
 > **Status**: FROZEN - Changes require version bump and UI sync
 
 This document defines the API contract between `research-mind-service` (FastAPI backend) and `research-mind-ui` (SvelteKit frontend).
@@ -351,6 +351,7 @@ Content items are pieces of data (text, files, URLs, git repos) added to a sessi
 | `url` | Fetch content from URL (source contains the URL) |
 | `git_repo` | Clone a git repository (source contains the repo URL) |
 | `mcp_source` | Content from MCP tool (source contains MCP reference) |
+| `document` | Extract text from uploaded document (PDF, DOCX, MD, TXT) |
 
 ### Content Status
 
@@ -471,6 +472,120 @@ curl -X POST http://localhost:15010/api/v1/sessions/{session_id}/content \
   -F "content_type=url" \
   -F "title=Reference Article" \
   -F "source=https://example.com/article.html"
+```
+
+---
+
+### Document Content Type
+
+The `document` content type extracts text from uploaded document files with structure preservation. The original file is discarded after extraction; only the extracted content is stored.
+
+#### Supported Formats
+
+| Format | Extension | Processing Method | Output File |
+|--------|-----------|-------------------|-------------|
+| PDF | `.pdf` | PyMuPDF4LLM (structure detection) | `content.md` |
+| Word | `.docx` | Mammoth (HTML to Markdown) | `content.md` |
+| Markdown | `.md` | Direct storage (no transformation) | `content.md` |
+| Plain Text | `.txt` | Direct storage (no transformation) | `content.txt` |
+
+#### Request Format
+
+**Endpoint**: `POST /api/v1/sessions/{session_id}/content`
+**Content-Type**: `multipart/form-data`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `content_type` | string | Yes | Must be `"document"` |
+| `file` | file | Yes | Document file (PDF, DOCX, MD, TXT) |
+| `title` | string | No | Optional title override (defaults to filename) |
+| `metadata` | string | No | JSON string of additional metadata |
+
+#### Response
+
+**Success** `201 Created`
+
+```json
+{
+  "content_id": "b1c2d3e4-f5g6-7890-hijk-lm1234567890",
+  "session_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "content_type": "document",
+  "title": "quarterly-report.pdf",
+  "source_ref": null,
+  "storage_path": "content.md",
+  "status": "ready",
+  "error_message": null,
+  "size_bytes": 45230,
+  "mime_type": "text/markdown",
+  "metadata_json": {
+    "original_filename": "quarterly-report.pdf",
+    "file_extension": ".pdf",
+    "file_size_bytes": 2457600,
+    "extraction_method": "pymupdf4llm",
+    "extracted_at": "2026-02-05T14:30:00Z",
+    "document_metadata": {
+      "title": "Q4 2025 Quarterly Report",
+      "author": "Finance Team",
+      "page_count": 24
+    },
+    "content_stats": {
+      "character_count": 45230,
+      "word_count": 7845,
+      "line_count": 892
+    }
+  },
+  "created_at": "2026-02-05T14:30:00",
+  "updated_at": "2026-02-05T14:30:00"
+}
+```
+
+#### Error Responses
+
+**400 Bad Request** - Unsupported Format
+
+```json
+{
+  "detail": {
+    "error": {
+      "code": "UNSUPPORTED_DOCUMENT_FORMAT",
+      "message": "Unsupported document format: .xlsx. Supported formats: .pdf, .docx, .md, .txt"
+    }
+  }
+}
+```
+
+**413 Payload Too Large** - File Too Large
+
+```json
+{
+  "detail": {
+    "error": {
+      "code": "FILE_TOO_LARGE",
+      "message": "Document file exceeds maximum size of 50MB"
+    }
+  }
+}
+```
+
+**422 Unprocessable Entity** - Extraction Failed
+
+```json
+{
+  "detail": {
+    "error": {
+      "code": "DOCUMENT_EXTRACTION_FAILED",
+      "message": "Failed to extract content from document: PDF is encrypted and requires a password"
+    }
+  }
+}
+```
+
+**curl** (document):
+```bash
+curl -X POST http://localhost:15010/api/v1/sessions/{session_id}/content \
+  -F "content_type=document" \
+  -F "title=Quarterly Report" \
+  -F "file=@/path/to/quarterly-report.pdf"
 ```
 
 ---
@@ -1705,6 +1820,9 @@ Errors are returned inside `detail` (FastAPI HTTPException format):
 | `NOT_ASSISTANT_MESSAGE`   | 400         | Export only from assistant messages  |
 | `NO_PRECEDING_USER_MESSAGE` | 404       | Assistant message has no preceding user question |
 | `EXPORT_GENERATION_FAILED`| 500         | Failed to generate export file       |
+| `UNSUPPORTED_DOCUMENT_FORMAT` | 400     | Document format not supported (.pdf, .docx, .md, .txt only) |
+| `FILE_TOO_LARGE`          | 413         | Document file exceeds size limit     |
+| `DOCUMENT_EXTRACTION_FAILED` | 422      | Failed to extract text from document |
 | `INTERNAL_ERROR`          | 500         | Unexpected server error              |
 
 ---
@@ -1761,6 +1879,7 @@ All endpoints are currently open. Authentication will be added in a future versi
 
 | Version | Date       | Changes                                    |
 | ------- | ---------- | ------------------------------------------ |
+| 1.8.0   | 2026-02-05 | Added `document` content type for extracting text from uploaded documents. Supported formats: PDF (.pdf), DOCX (.docx), Markdown (.md), Plain Text (.txt). PDF extraction with structure detection (headers, paragraphs, lists). DOCX to markdown conversion. Document metadata extraction (title, author, page count). Added error codes: UNSUPPORTED_DOCUMENT_FORMAT, FILE_TOO_LARGE, DOCUMENT_EXTRACTION_FAILED. |
 | 1.0.0   | 2026-01-31 | Initial contract: Sessions, indexing (planned), search, analysis |
 | 1.1.0   | 2026-02-01 | Updated to match implemented endpoints: workspace indexing (subprocess-based), audit logs, index status. Marked search/analysis as planned. |
 | 1.2.0   | 2026-02-03 | Added Content Management endpoints: POST/GET/DELETE content items with support for text, file_upload, url, git_repo, mcp_source types. Added CONTENT_NOT_FOUND and INVALID_METADATA error codes. |

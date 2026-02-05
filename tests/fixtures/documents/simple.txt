@@ -1,0 +1,6 @@
+This is a simple text file for testing.
+
+It contains multiple lines of text.
+The extractor should preserve line breaks.
+
+This is the last paragraph.

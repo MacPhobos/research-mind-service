@@ -32,6 +32,7 @@ class ContentType(str, enum.Enum):
     URL = "url"
     GIT_REPO = "git_repo"
     MCP_SOURCE = "mcp_source"
+    DOCUMENT = "document"
 
 
 class ContentStatus(str, enum.Enum):

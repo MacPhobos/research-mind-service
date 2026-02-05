@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from app.models.content_item import ContentType
 from app.services.retrievers.base import ContentRetriever
+from app.services.retrievers.document import DocumentRetriever
 from app.services.retrievers.file_upload import FileUploadRetriever
 from app.services.retrievers.git_repo import GitRepoRetriever
 from app.services.retrievers.mcp_source import McpSourceRetriever
@@ -17,6 +18,7 @@ _REGISTRY: dict[str, type] = {
     ContentType.URL.value: UrlRetriever,
     ContentType.GIT_REPO.value: GitRepoRetriever,
     ContentType.MCP_SOURCE.value: McpSourceRetriever,
+    ContentType.DOCUMENT.value: DocumentRetriever,
 }
 
 
