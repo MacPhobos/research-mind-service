@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.schemas.content import AddContentRequest, ContentItemResponse, ContentListResponse
+from app.schemas.links import BatchAddContentRequest, BatchContentResponse
 from app.services import content_service
 
 router = APIRouter(prefix="/api/v1/sessions/{session_id}/content", tags=["content"])
@@ -114,3 +115,25 @@ def delete_content(
                 }
             },
         )
+
+
+@router.post("/batch", response_model=BatchContentResponse, status_code=200)
+def batch_add_content(
+    session_id: str,
+    request: BatchAddContentRequest,
+    db: Session = Depends(get_db),
+) -> BatchContentResponse:
+    """Add multiple URLs as content items to a session.
+
+    Supports batch adding of URLs with automatic duplicate detection.
+    Duplicates are identified by matching source_ref (URL) against existing
+    content in the session, as well as within the batch itself.
+
+    Args:
+        session_id: Target session ID.
+        request: Batch add request containing list of URLs (1-50).
+
+    Returns:
+        BatchContentResponse with per-item results and summary counts.
+    """
+    return content_service.batch_add_content(db, session_id, request)

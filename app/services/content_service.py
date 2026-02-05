@@ -15,6 +15,11 @@ from app.core.config import settings
 from app.models.content_item import ContentItem, ContentStatus
 from app.models.session import Session
 from app.schemas.content import AddContentRequest, ContentItemResponse, ContentListResponse
+from app.schemas.links import (
+    BatchAddContentRequest,
+    BatchContentItemResponse,
+    BatchContentResponse,
+)
 from app.services.retrievers.factory import get_retriever
 
 logger = logging.getLogger(__name__)
@@ -233,3 +238,154 @@ def delete_content(db: DbSession, session_id: str, content_id: str) -> bool:
 
     logger.info("Deleted content %s from session %s", content_id, session_id)
     return True
+
+
+def batch_add_content(
+    db: DbSession, session_id: str, request: BatchAddContentRequest
+) -> BatchContentResponse:
+    """Add multiple URLs as content items to a session with duplicate detection.
+
+    1. Validate session exists
+    2. Collect all URLs to add
+    3. Query for existing content by source_ref (URL)
+    4. Deduplicate within batch
+    5. Add non-duplicate URLs
+    6. Return summary with per-item results
+
+    Args:
+        db: Database session.
+        session_id: Target session ID.
+        request: Batch add request with URLs.
+
+    Returns:
+        BatchContentResponse with per-item results and counts.
+    """
+    # Validate session exists
+    session = _get_session_or_raise(db, session_id)
+
+    items_results: list[BatchContentItemResponse] = []
+    success_count = 0
+    error_count = 0
+    duplicate_count = 0
+
+    # Collect all URL strings for duplicate checking
+    url_strings = [str(item.url) for item in request.urls]
+
+    # Query existing content by source_ref to detect duplicates
+    existing_items = (
+        db.query(ContentItem)
+        .filter(
+            ContentItem.session_id == session_id,
+            ContentItem.source_ref.in_(url_strings),
+        )
+        .all()
+    )
+    existing_urls: set[str] = {item.source_ref for item in existing_items if item.source_ref}
+
+    # Track URLs seen in this batch for intra-batch deduplication
+    seen_in_batch: set[str] = set()
+
+    for url_item in request.urls:
+        url_str = str(url_item.url)
+
+        # Check for duplicate in database
+        if url_str in existing_urls:
+            items_results.append(
+                BatchContentItemResponse(
+                    content_id=None,
+                    url=url_str,
+                    status="duplicate",
+                    title=url_item.title,
+                    error=None,
+                )
+            )
+            duplicate_count += 1
+            continue
+
+        # Check for duplicate within this batch
+        if url_str in seen_in_batch:
+            items_results.append(
+                BatchContentItemResponse(
+                    content_id=None,
+                    url=url_str,
+                    status="duplicate",
+                    title=url_item.title,
+                    error="Duplicate URL within batch",
+                )
+            )
+            duplicate_count += 1
+            continue
+
+        seen_in_batch.add(url_str)
+
+        # Add the content using existing add_content logic
+        try:
+            add_request = AddContentRequest(
+                content_type="url",
+                title=url_item.title,
+                source=url_str,
+                metadata={"source_url": request.source_url} if request.source_url else None,
+            )
+
+            # Call add_content to process the URL
+            response = add_content(db, session_id, add_request)
+
+            items_results.append(
+                BatchContentItemResponse(
+                    content_id=response.content_id,
+                    url=url_str,
+                    status="success",
+                    title=response.title,
+                    error=None,
+                )
+            )
+            success_count += 1
+
+        except HTTPException as e:
+            # Handle HTTP exceptions from add_content
+            error_msg = str(e.detail.get("error", {}).get("message", str(e)))
+            items_results.append(
+                BatchContentItemResponse(
+                    content_id=None,
+                    url=url_str,
+                    status="error",
+                    title=url_item.title,
+                    error=error_msg,
+                )
+            )
+            error_count += 1
+
+        except Exception as e:
+            # Handle unexpected errors
+            logger.exception("Unexpected error adding URL %s", url_str)
+            items_results.append(
+                BatchContentItemResponse(
+                    content_id=None,
+                    url=url_str,
+                    status="error",
+                    title=url_item.title,
+                    error=f"Unexpected error: {e}",
+                )
+            )
+            error_count += 1
+
+    # Touch session last_accessed
+    session.mark_accessed()
+    db.commit()
+
+    logger.info(
+        "Batch added content to session %s: %d success, %d error, %d duplicate",
+        session_id,
+        success_count,
+        error_count,
+        duplicate_count,
+    )
+
+    return BatchContentResponse(
+        session_id=session_id,
+        total_count=len(request.urls),
+        success_count=success_count,
+        error_count=error_count,
+        duplicate_count=duplicate_count,
+        items=items_results,
+    )

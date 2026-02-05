@@ -1,7 +1,7 @@
 # research-mind API Contract
 
-> **Version**: 1.5.0
-> **Last Updated**: 2026-02-03
+> **Version**: 1.6.0
+> **Last Updated**: 2026-02-04
 > **Status**: FROZEN - Changes require version bump and UI sync
 
 This document defines the API contract between `research-mind-service` (FastAPI backend) and `research-mind-ui` (SvelteKit frontend).
@@ -594,6 +594,254 @@ Delete a content item and its storage files.
 **curl**:
 ```bash
 curl -X DELETE http://localhost:15010/api/v1/sessions/{session_id}/content/{content_id}
+```
+
+---
+
+### Extract Links from URL
+
+#### `POST /api/v1/content/extract-links`
+
+Extract all links from a given URL for user selection. This endpoint fetches the page content and returns categorized links found on the page.
+
+**Request Body**
+
+```json
+{
+  "url": "https://example.com/documentation"
+}
+```
+
+| Field | Type | Required | Constraints |
+|-------|------|----------|-------------|
+| `url` | string | yes | Valid HTTP/HTTPS URL, max 2048 characters |
+
+**Response** `200 OK`
+
+```json
+{
+  "source_url": "https://example.com/documentation",
+  "page_title": "Documentation - Example",
+  "links": [
+    {
+      "url": "https://example.com/docs/getting-started",
+      "text": "Getting Started Guide",
+      "source_element": "main_content"
+    },
+    {
+      "url": "https://example.com/docs/api-reference",
+      "text": "API Reference",
+      "source_element": "main_content"
+    },
+    {
+      "url": "https://example.com/about",
+      "text": "About Us",
+      "source_element": "navigation"
+    }
+  ],
+  "link_count": 3,
+  "extracted_at": "2026-02-04T10:30:00Z"
+}
+```
+
+**Link Source Elements**
+
+| Value | Description |
+|-------|-------------|
+| `main_content` | Links within the main content area (article, main, content divs) |
+| `navigation` | Links in navigation menus (nav, header navigation) |
+| `sidebar` | Links in sidebars (aside elements) |
+| `footer` | Links in footer sections |
+| `other` | Links from other page sections |
+
+**Error Responses**
+
+| Status | Code | Description |
+|--------|------|-------------|
+| 400 | INVALID_URL | URL is malformed or not HTTP/HTTPS |
+| 400 | EXTRACTION_FAILED | Failed to fetch or parse the URL content |
+| 408 | TIMEOUT | Request timed out while fetching URL |
+
+```json
+{
+  "detail": {
+    "error": {
+      "code": "INVALID_URL",
+      "message": "Invalid URL format: must be HTTP or HTTPS"
+    }
+  }
+}
+```
+
+```json
+{
+  "detail": {
+    "error": {
+      "code": "EXTRACTION_FAILED",
+      "message": "Failed to extract links: connection refused"
+    }
+  }
+}
+```
+
+```json
+{
+  "detail": {
+    "error": {
+      "code": "TIMEOUT",
+      "message": "Request timed out after 30 seconds"
+    }
+  }
+}
+```
+
+**curl**:
+```bash
+curl -X POST http://localhost:15010/api/v1/content/extract-links \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://example.com/documentation"}'
+```
+
+---
+
+### Add Batch Content
+
+#### `POST /api/v1/sessions/{session_id}/content/batch`
+
+Add multiple URL content items to a session in a single request. Supports up to 50 URLs per batch. Duplicate URLs (within the batch or already existing in the session) are detected and skipped.
+
+**Path Parameters**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `session_id` | string | Session UUID |
+
+**Request Body**
+
+```json
+{
+  "urls": [
+    {
+      "url": "https://example.com/docs/getting-started",
+      "title": "Getting Started Guide"
+    },
+    {
+      "url": "https://example.com/docs/api-reference",
+      "title": "API Reference"
+    },
+    {
+      "url": "https://example.com/docs/examples"
+    }
+  ]
+}
+```
+
+| Field | Type | Required | Constraints |
+|-------|------|----------|-------------|
+| `urls` | array | yes | 1-50 URL items |
+| `urls[].url` | string | yes | Valid HTTP/HTTPS URL, max 2048 characters |
+| `urls[].title` | string | no | Optional title override, max 512 characters |
+
+**Response** `201 Created`
+
+```json
+{
+  "session_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "results": [
+    {
+      "url": "https://example.com/docs/getting-started",
+      "content_id": "c1d2e3f4-g5h6-7890-ijkl-mn1234567890",
+      "status": "created",
+      "title": "Getting Started Guide"
+    },
+    {
+      "url": "https://example.com/docs/api-reference",
+      "content_id": "d2e3f4g5-h6i7-8901-jklm-no2345678901",
+      "status": "created",
+      "title": "API Reference"
+    },
+    {
+      "url": "https://example.com/docs/examples",
+      "content_id": null,
+      "status": "skipped",
+      "title": null,
+      "reason": "Duplicate URL already exists in session"
+    }
+  ],
+  "summary": {
+    "total": 3,
+    "successful": 2,
+    "failed": 0,
+    "skipped_duplicates": 1
+  }
+}
+```
+
+**Result Status Values**
+
+| Status | Description |
+|--------|-------------|
+| `created` | Content item successfully created |
+| `failed` | Content creation failed (see `error` field) |
+| `skipped` | URL skipped as duplicate (see `reason` field) |
+
+**Notes**:
+- Duplicate detection checks both within the batch and against existing session content
+- Duplicates are determined by normalized URL (protocol, host, path)
+- Batch size limit is 50 URLs per request
+- URLs that fail validation are marked as `failed` with error details
+
+**Error Responses**
+
+| Status | Code | Description |
+|--------|------|-------------|
+| 400 | EMPTY_URL_LIST | The urls array is empty |
+| 400 | TOO_MANY_URLS | More than 50 URLs in the request |
+| 404 | SESSION_NOT_FOUND | Session does not exist |
+
+```json
+{
+  "detail": {
+    "error": {
+      "code": "EMPTY_URL_LIST",
+      "message": "At least one URL is required"
+    }
+  }
+}
+```
+
+```json
+{
+  "detail": {
+    "error": {
+      "code": "TOO_MANY_URLS",
+      "message": "Maximum 50 URLs allowed per batch request"
+    }
+  }
+}
+```
+
+```json
+{
+  "detail": {
+    "error": {
+      "code": "SESSION_NOT_FOUND",
+      "message": "Session 'nonexistent-id' not found"
+    }
+  }
+}
+```
+
+**curl**:
+```bash
+curl -X POST http://localhost:15010/api/v1/sessions/{session_id}/content/batch \
+  -H "Content-Type: application/json" \
+  -d '{
+    "urls": [
+      {"url": "https://example.com/docs/getting-started", "title": "Getting Started"},
+      {"url": "https://example.com/docs/api-reference", "title": "API Reference"}
+    ]
+  }'
 ```
 
 ---
@@ -1301,7 +1549,12 @@ Errors are returned inside `detail` (FastAPI HTTPException format):
 | ------------------------- | ----------- | ------------------------------------ |
 | `VALIDATION_ERROR`        | 400         | Invalid request parameters           |
 | `INVALID_METADATA`        | 400         | Invalid JSON in metadata field       |
+| `INVALID_URL`             | 400         | URL is malformed or not HTTP/HTTPS   |
+| `EXTRACTION_FAILED`       | 400         | Failed to fetch or parse URL content |
+| `EMPTY_URL_LIST`          | 400         | The urls array is empty              |
+| `TOO_MANY_URLS`           | 400         | More than 50 URLs in the request     |
 | `SESSION_NOT_INDEXED`     | 400         | Session must be indexed before chat  |
+| `TIMEOUT`                 | 408         | Request timed out while fetching URL |
 | `SESSION_NOT_FOUND`       | 404         | Session UUID not found               |
 | `CONTENT_NOT_FOUND`       | 404         | Content item not found               |
 | `CHAT_MESSAGE_NOT_FOUND`  | 404         | Chat message UUID not found          |
@@ -1319,10 +1572,11 @@ Errors are returned inside `detail` (FastAPI HTTPException format):
 | Code | Meaning                    | Usage                        |
 | ---- | -------------------------- | ---------------------------- |
 | `200` | OK                        | Successful GET, POST (indexing) |
-| `201` | Created                   | Successful POST (session creation) |
+| `201` | Created                   | Successful POST (session creation, batch content) |
 | `204` | No Content                | Successful DELETE            |
 | `400` | Bad Request               | Validation error             |
 | `404` | Not Found                 | Resource not found           |
+| `408` | Request Timeout           | URL fetch timed out          |
 | `500` | Internal Server Error     | Tool not found, timeout, unexpected error |
 
 ---
@@ -1371,6 +1625,7 @@ All endpoints are currently open. Authentication will be added in a future versi
 | 1.3.0   | 2026-02-03 | Added Chat endpoints: POST/GET/DELETE chat messages with session-scoped history. Added SESSION_NOT_INDEXED, CHAT_MESSAGE_NOT_FOUND, CLAUDE_MPM_NOT_AVAILABLE, CLAUDE_MPM_TIMEOUT error codes. SSE streaming endpoint marked as planned (Phase 2). |
 | 1.4.0   | 2026-02-03 | Implemented Two-Stage Response Streaming: SSE events now include event_type, stage classification, and raw_json. Stage 1 (EXPANDABLE) for initialization/system events (not persisted). Stage 2 (PRIMARY) for assistant/result events (persisted). Added ChatStreamResultMetadata with token counts, duration, and cost. New event types: init_text, system_init, system_hook, stream_token, assistant, result. |
 | 1.5.0   | 2026-02-04 | Added Clear Chat History endpoint: DELETE /api/v1/sessions/{session_id}/chat to delete all chat messages for a session. |
+| 1.6.0   | 2026-02-04 | Added Multi-URL Content Addition endpoints: POST /api/v1/content/extract-links for extracting links from a URL with categorization by source element (main_content, navigation, sidebar, footer, other). POST /api/v1/sessions/{session_id}/content/batch for adding up to 50 URLs in a single request with duplicate detection (within batch and against existing session content). Added error codes: INVALID_URL, EXTRACTION_FAILED, TIMEOUT, EMPTY_URL_LIST, TOO_MANY_URLS. |
 
 ---
 

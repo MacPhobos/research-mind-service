@@ -24,6 +24,7 @@ from app.routes.audit import router as audit_router
 from app.routes.chat import router as chat_router
 from app.routes.content import router as content_router
 from app.routes.indexing import router as indexing_router
+from app.routes.links import router as links_router
 from app.routes.sessions import router as sessions_router
 
 # ---------------------------------------------------------------------------
@@ -202,6 +203,9 @@ app.include_router(indexing_router)
 
 # Content management routes (prefixed with /api/v1/sessions/{session_id}/content)
 app.include_router(content_router)
+
+# Link extraction routes (prefixed with /api/v1/content)
+app.include_router(links_router)
 
 # Audit log routes (prefixed with /api/v1/sessions)
 app.include_router(audit_router)
