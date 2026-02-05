@@ -8,6 +8,8 @@ A FastAPI backend service for research-mind. Provides session management, subpro
 
 ## Quick Start
 
+> **First time?** See the monorepo [Getting Started Guide](../docs/GETTING_STARTED.md) for complete prerequisites and setup.
+
 ### Local Development (without Docker)
 
 **Prerequisites**: Python 3.12+, PostgreSQL 15+, [uv](https://docs.astral.sh/uv/)
