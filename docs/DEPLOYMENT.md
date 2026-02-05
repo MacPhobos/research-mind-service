@@ -7,7 +7,7 @@ This guide covers deploying research-mind-service for local development and prod
 ## Prerequisites
 
 - **Python 3.12+** with [uv](https://docs.astral.sh/uv/) package manager
-- **PostgreSQL 15+** (local or remote)
+- **PostgreSQL 18+** (local or remote)
 - **mcp-vector-search** CLI tool installed and on PATH (for indexing features)
 - **Docker** and **Docker Compose** (for containerized deployment)
 
@@ -95,7 +95,7 @@ docker compose down -v
 
 The Docker Compose configuration starts:
 
-- **postgres**: PostgreSQL 15 with health checks and persistent volume
+- **postgres**: PostgreSQL 18 with health checks and persistent volume
 - **service**: The research-mind-service built from `./research-mind-service/Dockerfile`
 
 ### Database Migrations in Docker
@@ -135,7 +135,7 @@ The Dockerfile uses a multi-stage build:
 
 ### PostgreSQL Requirements
 
-- PostgreSQL 15+ recommended
+- PostgreSQL 18+ recommended
 - The `psycopg` (v3) driver is used by default
 - Connection string format: `postgresql+psycopg://user:password@host:port/dbname`
 

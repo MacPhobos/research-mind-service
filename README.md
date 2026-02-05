@@ -12,7 +12,7 @@ A FastAPI backend service for research-mind. Provides session management, subpro
 
 ### Local Development (without Docker)
 
-**Prerequisites**: Python 3.12+, PostgreSQL 15+, [uv](https://docs.astral.sh/uv/)
+**Prerequisites**: Python 3.12+, PostgreSQL 18+, [uv](https://docs.astral.sh/uv/)
 
 ```bash
 # 1. Install dependencies
