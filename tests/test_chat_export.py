@@ -423,3 +423,143 @@ class TestExportFactory:
 
         exporter = get_exporter(ChatExportFormat.PDF)
         assert isinstance(exporter, PDFExporter)
+
+
+class TestPDFMarkdownRendering:
+    """Unit tests for markdown rendering in PDF exporter."""
+
+    def test_bold_text_renders_as_strong(self):
+        """Test that **bold** becomes <strong>bold</strong>."""
+        from unittest.mock import MagicMock
+
+        from app.services.export.pdf import PDFExporter
+
+        exporter = PDFExporter()
+
+        # Create mock message with bold text
+        message = MagicMock()
+        message.role = "assistant"
+        message.content = "This is **bold** text."
+        message.created_at = None
+
+        html = exporter._generate_html([message], None)
+
+        assert "<strong>bold</strong>" in html
+        assert "**bold**" not in html
+
+    def test_italic_text_renders_as_em(self):
+        """Test that *italic* becomes <em>italic</em>."""
+        from unittest.mock import MagicMock
+
+        from app.services.export.pdf import PDFExporter
+
+        exporter = PDFExporter()
+
+        message = MagicMock()
+        message.role = "assistant"
+        message.content = "This is *italic* text."
+        message.created_at = None
+
+        html = exporter._generate_html([message], None)
+
+        assert "<em>italic</em>" in html
+        assert "*italic*" not in html
+
+    def test_heading_renders_as_h_tag(self):
+        """Test that # Heading becomes <h1>Heading</h1>."""
+        from unittest.mock import MagicMock
+
+        from app.services.export.pdf import PDFExporter
+
+        exporter = PDFExporter()
+
+        message = MagicMock()
+        message.role = "assistant"
+        message.content = "# Heading\n\nSome text."
+        message.created_at = None
+
+        html = exporter._generate_html([message], None)
+
+        assert "<h1>Heading</h1>" in html
+        assert "# Heading" not in html
+
+    def test_bullet_list_renders_as_ul(self):
+        """Test that - list item becomes <ul><li>list item</li></ul>."""
+        from unittest.mock import MagicMock
+
+        from app.services.export.pdf import PDFExporter
+
+        exporter = PDFExporter()
+
+        message = MagicMock()
+        message.role = "assistant"
+        message.content = "List:\n\n- item one\n- item two"
+        message.created_at = None
+
+        html = exporter._generate_html([message], None)
+
+        assert "<ul>" in html
+        assert "<li>" in html
+        assert "item one" in html
+        assert "item two" in html
+
+    def test_code_block_renders_as_pre_code(self):
+        """Test that ```code``` becomes <pre><code>code</code></pre>."""
+        from unittest.mock import MagicMock
+
+        from app.services.export.pdf import PDFExporter
+
+        exporter = PDFExporter()
+
+        message = MagicMock()
+        message.role = "assistant"
+        message.content = "Example:\n\n```python\nprint('hello')\n```"
+        message.created_at = None
+
+        html = exporter._generate_html([message], None)
+
+        assert "<pre>" in html
+        assert "<code" in html
+        assert "print" in html
+
+    def test_inline_code_renders_as_code(self):
+        """Test that `code` becomes <code>code</code>."""
+        from unittest.mock import MagicMock
+
+        from app.services.export.pdf import PDFExporter
+
+        exporter = PDFExporter()
+
+        message = MagicMock()
+        message.role = "assistant"
+        message.content = "Use the `print()` function."
+        message.created_at = None
+
+        html = exporter._generate_html([message], None)
+
+        assert "<code>print()</code>" in html
+        assert "`print()`" not in html
+
+    def test_multiple_messages_convert_independently(self):
+        """Test that markdown conversion works for multiple messages."""
+        from unittest.mock import MagicMock
+
+        from app.services.export.pdf import PDFExporter
+
+        exporter = PDFExporter()
+
+        msg1 = MagicMock()
+        msg1.role = "user"
+        msg1.content = "What is **Python**?"
+        msg1.created_at = None
+
+        msg2 = MagicMock()
+        msg2.role = "assistant"
+        msg2.content = "**Python** is a *programming language*."
+        msg2.created_at = None
+
+        html = exporter._generate_html([msg1, msg2], None)
+
+        # Both messages should have their markdown converted
+        assert html.count("<strong>Python</strong>") == 2
+        assert "<em>programming language</em>" in html

@@ -1,13 +1,15 @@
 """PDF exporter for chat history.
 
 Uses weasyprint to convert HTML to PDF for styled document output.
+Uses markdown library to properly render markdown content.
 """
 
 from __future__ import annotations
 
 import html as html_lib
-import re
 from typing import TYPE_CHECKING
+
+import markdown
 
 from app.exceptions import ExportGenerationError
 from app.models.chat_message import ChatRole
@@ -25,6 +27,16 @@ except ImportError:
     WEASYPRINT_AVAILABLE = False
     HTML = None  # type: ignore[misc, assignment]
     CSS = None  # type: ignore[misc, assignment]
+
+# Markdown converter with common extensions
+_md_converter = markdown.Markdown(
+    extensions=[
+        "fenced_code",  # ```code blocks```
+        "tables",  # | table | syntax |
+        "nl2br",  # Newlines become <br>
+        "sane_lists",  # Better list handling
+    ]
+)
 
 
 class PDFExporter(ChatExporter):
@@ -105,6 +117,64 @@ class PDFExporter(ChatExporter):
             overflow-x: auto;
             font-family: 'SF Mono', Monaco, Consolas, monospace;
             font-size: 10pt;
+        }
+        pre code {
+            padding: 0;
+            background-color: transparent;
+        }
+        /* Markdown content styles */
+        .message-content h1,
+        .message-content h2,
+        .message-content h3,
+        .message-content h4,
+        .message-content h5,
+        .message-content h6 {
+            margin-top: 0.5em;
+            margin-bottom: 0.3em;
+            color: #1a1a1a;
+        }
+        .message-content h1 { font-size: 16pt; }
+        .message-content h2 { font-size: 14pt; }
+        .message-content h3 { font-size: 12pt; }
+        .message-content h4 { font-size: 11pt; }
+        .message-content ul,
+        .message-content ol {
+            margin: 0.5em 0;
+            padding-left: 1.5em;
+        }
+        .message-content li {
+            margin: 0.2em 0;
+        }
+        .message-content blockquote {
+            margin: 0.5em 0;
+            padding: 0.5em 1em;
+            border-left: 3px solid #0066cc;
+            background-color: #f0f7ff;
+            color: #333;
+        }
+        .message-content strong {
+            font-weight: bold;
+        }
+        .message-content em {
+            font-style: italic;
+        }
+        .message-content table {
+            border-collapse: collapse;
+            margin: 0.5em 0;
+            width: 100%;
+        }
+        .message-content th,
+        .message-content td {
+            border: 1px solid #ddd;
+            padding: 0.5em;
+            text-align: left;
+        }
+        .message-content th {
+            background-color: #f5f5f5;
+            font-weight: bold;
+        }
+        .message-content p {
+            margin: 0.3em 0;
         }
     """
 
@@ -194,14 +264,10 @@ class PDFExporter(ChatExporter):
                 timestamp = message.created_at.strftime("%Y-%m-%d %H:%M:%S")
                 timestamp_html = f" <span class='timestamp'>({timestamp})</span>"
 
-            # Escape content but preserve some markdown-like formatting
-            content = html_lib.escape(message.content)
-            # Simple code block handling (``` blocks)
-            content = self._convert_code_blocks(content)
-            # Simple inline code handling
-            content = self._convert_inline_code(content)
-            # Preserve line breaks
-            content = content.replace("\n", "<br>")
+            # Convert markdown content to HTML
+            # Reset the converter to clear any state from previous conversions
+            _md_converter.reset()
+            content = _md_converter.convert(message.content)
 
             lines.extend(
                 [
@@ -220,29 +286,3 @@ class PDFExporter(ChatExporter):
         )
 
         return "\n".join(lines)
-
-    def _convert_code_blocks(self, text: str) -> str:
-        """Convert markdown code blocks to HTML pre tags.
-
-        Args:
-            text: HTML-escaped text with markdown code blocks
-
-        Returns:
-            Text with code blocks converted to <pre><code> tags
-        """
-        # Match ```language\ncode\n``` (note: text is already HTML-escaped)
-        pattern = r"```(\w*)\n(.*?)\n```"
-        return re.sub(pattern, r"<pre><code>\2</code></pre>", text, flags=re.DOTALL)
-
-    def _convert_inline_code(self, text: str) -> str:
-        """Convert markdown inline code to HTML code tags.
-
-        Args:
-            text: Text with markdown inline code
-
-        Returns:
-            Text with inline code converted to <code> tags
-        """
-        # Match `code`
-        pattern = r"`([^`]+)`"
-        return re.sub(pattern, r"<code>\1</code>", text)
