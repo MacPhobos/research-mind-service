@@ -1,6 +1,6 @@
 # research-mind API Contract
 
-> **Version**: 1.6.0
+> **Version**: 1.7.0
 > **Last Updated**: 2026-02-04
 > **Status**: FROZEN - Changes require version bump and UI sync
 
@@ -1238,6 +1238,144 @@ curl -X DELETE http://localhost:15010/api/v1/sessions/{session_id}/chat
 
 ---
 
+### Export Chat History
+
+#### `POST /api/v1/sessions/{session_id}/chat/export`
+
+Generate and download full chat history in specified format (PDF or Markdown).
+
+**Path Parameters**
+
+| Parameter    | Type   | Description  |
+| ------------ | ------ | ------------ |
+| `session_id` | string | Session UUID |
+
+**Request Body**
+
+```json
+{
+  "format": "pdf",
+  "include_metadata": true,
+  "include_timestamps": true
+}
+```
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `format` | string | yes | - | Export format: "pdf" or "markdown" |
+| `include_metadata` | boolean | no | true | Include session name, export date |
+| `include_timestamps` | boolean | no | true | Include message timestamps |
+
+**Response** `200 OK` - Binary file download
+
+**Response Headers**
+
+```
+Content-Type: application/pdf (for PDF)
+Content-Type: text/markdown (for Markdown)
+Content-Disposition: attachment; filename="chat-export-{session_id}-{timestamp}.{ext}"
+```
+
+**Error Responses**
+
+| Status | Code | Description |
+|--------|------|-------------|
+| 404 | SESSION_NOT_FOUND | Session does not exist |
+| 404 | NO_CHAT_MESSAGES | No messages to export |
+| 422 | Validation Error | Invalid format (must be "pdf" or "markdown") |
+| 500 | EXPORT_GENERATION_FAILED | Failed to generate export file |
+
+```json
+{
+  "detail": {
+    "error": {
+      "code": "NO_CHAT_MESSAGES",
+      "message": "No chat messages found for session {session_id}"
+    }
+  }
+}
+```
+
+**curl**:
+```bash
+# Markdown export
+curl -X POST http://localhost:15010/api/v1/sessions/{session_id}/chat/export \
+  -H "Content-Type: application/json" \
+  -d '{"format": "markdown"}' \
+  -o chat-export.md
+
+# PDF export
+curl -X POST http://localhost:15010/api/v1/sessions/{session_id}/chat/export \
+  -H "Content-Type: application/json" \
+  -d '{"format": "pdf"}' \
+  -o chat-export.pdf
+```
+
+---
+
+### Export Single Q/A Pair
+
+#### `POST /api/v1/sessions/{session_id}/chat/{message_id}/export`
+
+Generate and download a specific question/answer pair. The message_id must be an assistant message.
+
+**Path Parameters**
+
+| Parameter    | Type   | Description  |
+| ------------ | ------ | ------------ |
+| `session_id` | string | Session UUID |
+| `message_id` | string | Assistant message UUID (will include preceding user message) |
+
+**Request Body**
+
+```json
+{
+  "format": "markdown",
+  "include_metadata": true,
+  "include_timestamps": true
+}
+```
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `format` | string | yes | - | Export format: "pdf" or "markdown" |
+| `include_metadata` | boolean | no | true | Include session name, export date |
+| `include_timestamps` | boolean | no | true | Include message timestamps |
+
+**Response** `200 OK` - Binary file download (same headers as full export)
+
+**Error Responses**
+
+| Status | Code | Description |
+|--------|------|-------------|
+| 400 | NOT_ASSISTANT_MESSAGE | Can only export from assistant messages |
+| 404 | SESSION_NOT_FOUND | Session does not exist |
+| 404 | CHAT_MESSAGE_NOT_FOUND | Message does not exist |
+| 404 | NO_PRECEDING_USER_MESSAGE | Assistant message has no preceding user question |
+| 422 | Validation Error | Invalid format (must be "pdf" or "markdown") |
+| 500 | EXPORT_GENERATION_FAILED | Failed to generate export file |
+
+```json
+{
+  "detail": {
+    "error": {
+      "code": "NOT_ASSISTANT_MESSAGE",
+      "message": "Message {message_id} is not an assistant message. Single export must target assistant messages."
+    }
+  }
+}
+```
+
+**curl**:
+```bash
+curl -X POST http://localhost:15010/api/v1/sessions/{session_id}/chat/{message_id}/export \
+  -H "Content-Type: application/json" \
+  -d '{"format": "markdown"}' \
+  -o qa-export.md
+```
+
+---
+
 ### Stream Chat Response
 
 #### `GET /api/v1/sessions/{session_id}/chat/stream/{message_id}`
@@ -1563,6 +1701,10 @@ Errors are returned inside `detail` (FastAPI HTTPException format):
 | `INDEXING_TIMEOUT`        | 500         | Indexing subprocess timed out        |
 | `CLAUDE_MPM_NOT_AVAILABLE`| 500         | claude-mpm CLI not found on PATH     |
 | `CLAUDE_MPM_TIMEOUT`      | 500         | claude-mpm response timed out        |
+| `NO_CHAT_MESSAGES`        | 404         | No messages to export                |
+| `NOT_ASSISTANT_MESSAGE`   | 400         | Export only from assistant messages  |
+| `NO_PRECEDING_USER_MESSAGE` | 404       | Assistant message has no preceding user question |
+| `EXPORT_GENERATION_FAILED`| 500         | Failed to generate export file       |
 | `INTERNAL_ERROR`          | 500         | Unexpected server error              |
 
 ---
@@ -1626,6 +1768,7 @@ All endpoints are currently open. Authentication will be added in a future versi
 | 1.4.0   | 2026-02-03 | Implemented Two-Stage Response Streaming: SSE events now include event_type, stage classification, and raw_json. Stage 1 (EXPANDABLE) for initialization/system events (not persisted). Stage 2 (PRIMARY) for assistant/result events (persisted). Added ChatStreamResultMetadata with token counts, duration, and cost. New event types: init_text, system_init, system_hook, stream_token, assistant, result. |
 | 1.5.0   | 2026-02-04 | Added Clear Chat History endpoint: DELETE /api/v1/sessions/{session_id}/chat to delete all chat messages for a session. |
 | 1.6.0   | 2026-02-04 | Added Multi-URL Content Addition endpoints: POST /api/v1/content/extract-links for extracting links from a URL with categorization by source element (main_content, navigation, sidebar, footer, other). POST /api/v1/sessions/{session_id}/content/batch for adding up to 50 URLs in a single request with duplicate detection (within batch and against existing session content). Added error codes: INVALID_URL, EXTRACTION_FAILED, TIMEOUT, EMPTY_URL_LIST, TOO_MANY_URLS. |
+| 1.7.0   | 2026-02-04 | Added Chat Export endpoints: POST /api/v1/sessions/{session_id}/chat/export for exporting full chat history. POST /api/v1/sessions/{session_id}/chat/{message_id}/export for exporting single Q/A pair. Supports PDF and Markdown formats with configurable metadata and timestamps. Added error codes: NO_CHAT_MESSAGES, NOT_ASSISTANT_MESSAGE, NO_PRECEDING_USER_MESSAGE, EXPORT_GENERATION_FAILED. |
 
 ---
 

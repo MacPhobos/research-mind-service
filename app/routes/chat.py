@@ -12,8 +12,10 @@ import json
 import logging
 from collections.abc import AsyncGenerator
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db, get_session_local
@@ -24,10 +26,15 @@ from app.exceptions import (
     ClaudeMpmFailedError,
     ClaudeMpmNotAvailableError,
     ClaudeMpmTimeoutError,
+    ExportGenerationError,
+    NoChatMessagesError,
+    NoPrecedingUserMessageError,
+    NotAssistantMessageError,
     SessionWorkspaceNotFoundError,
 )
-from app.models.chat_message import ChatStatus
+from app.models.chat_message import ChatRole, ChatStatus
 from app.schemas.chat import (
+    ChatExportRequest,
     ChatMessageListResponse,
     ChatMessageResponse,
     ChatMessageWithStreamUrlResponse,
@@ -35,6 +42,8 @@ from app.schemas.chat import (
     ChatStreamErrorEvent,
     SendChatMessageRequest,
 )
+from app.services.export import get_exporter
+from app.services.export.base import ExportMetadata
 from app.services import chat_service
 
 logger = logging.getLogger(__name__)
@@ -550,3 +559,236 @@ def clear_chat_history(
         )
 
     chat_service.clear_chat_history(db, session_id)
+
+
+# ---------------------------------------------------------------------------
+# Chat Export Endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/{session_id}/chat/export",
+    summary="Export full chat history",
+    description="Generate and download full chat history in specified format (PDF or Markdown)",
+    responses={
+        200: {
+            "description": "Export file",
+            "content": {
+                "application/pdf": {},
+                "text/markdown": {},
+            },
+        },
+        404: {"description": "Session not found or no messages"},
+        500: {"description": "Export generation failed"},
+    },
+)
+def export_chat_history(
+    session_id: str,
+    request: ChatExportRequest,
+    db: Session = Depends(get_db),
+) -> Response:
+    """Export full chat history for a session.
+
+    Generates and returns the full chat history in the specified format.
+    Supports PDF and Markdown formats.
+    """
+    # Verify session exists
+    session = chat_service.get_session_by_id(db, session_id)
+    if session is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": {
+                    "code": "SESSION_NOT_FOUND",
+                    "message": f"Session '{session_id}' not found",
+                }
+            },
+        )
+
+    # Get all messages ordered by created_at
+    messages, _ = chat_service.list_messages(db, session_id, limit=10000, offset=0)
+
+    if not messages:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": {
+                    "code": "NO_CHAT_MESSAGES",
+                    "message": f"No chat messages found for session {session_id}",
+                }
+            },
+        )
+
+    # Build export metadata
+    metadata = None
+    if request.include_metadata:
+        metadata = ExportMetadata(
+            session_name=session.name or "Untitled Session",
+            session_id=session_id,
+            export_date=datetime.now(timezone.utc),
+            message_count=len(messages),
+            include_timestamps=request.include_timestamps,
+        )
+
+    # Generate export
+    try:
+        exporter = get_exporter(request.format)
+        # Convert schema responses to model objects for exporter
+        # (list_messages returns ChatMessageResponse, but exporter expects ChatMessage)
+        message_objects = [
+            chat_service.get_message_by_id(db, session_id, msg.message_id)
+            for msg in messages
+        ]
+        # Filter out any None values (shouldn't happen, but be safe)
+        message_objects = [m for m in message_objects if m is not None]
+
+        content = exporter.export(message_objects, metadata)
+        filename = exporter.generate_filename(session_id)
+
+        return Response(
+            content=content,
+            media_type=exporter.content_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+            },
+        )
+    except ExportGenerationError as e:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": {
+                    "code": "EXPORT_GENERATION_FAILED",
+                    "message": str(e),
+                }
+            },
+        )
+
+
+@router.post(
+    "/{session_id}/chat/{message_id}/export",
+    summary="Export single Q/A pair",
+    description="Generate and download a specific question/answer pair",
+    responses={
+        200: {
+            "description": "Export file",
+            "content": {
+                "application/pdf": {},
+                "text/markdown": {},
+            },
+        },
+        400: {"description": "Invalid message type"},
+        404: {"description": "Session, message, or preceding message not found"},
+        500: {"description": "Export generation failed"},
+    },
+)
+def export_single_message(
+    session_id: str,
+    message_id: str,
+    request: ChatExportRequest,
+    db: Session = Depends(get_db),
+) -> Response:
+    """Export a single Q/A pair (user question + assistant answer).
+
+    The message_id must be an assistant message. The export will include
+    the preceding user message that triggered the assistant response.
+    """
+    # Verify session exists
+    session = chat_service.get_session_by_id(db, session_id)
+    if session is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": {
+                    "code": "SESSION_NOT_FOUND",
+                    "message": f"Session '{session_id}' not found",
+                }
+            },
+        )
+
+    # Get the target message
+    message = chat_service.get_message_by_id(db, session_id, message_id)
+    if message is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": {
+                    "code": "CHAT_MESSAGE_NOT_FOUND",
+                    "message": f"Chat message '{message_id}' not found in session '{session_id}'",
+                }
+            },
+        )
+
+    # Verify it's an assistant message
+    if message.role != ChatRole.ASSISTANT.value:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": {
+                    "code": "NOT_ASSISTANT_MESSAGE",
+                    "message": f"Message {message_id} is not an assistant message. "
+                    "Single export must target assistant messages.",
+                }
+            },
+        )
+
+    # Get preceding user message
+    messages, _ = chat_service.list_messages(db, session_id, limit=10000, offset=0)
+    user_message = None
+    for msg in reversed(messages):
+        msg_obj = chat_service.get_message_by_id(db, session_id, msg.message_id)
+        if (
+            msg_obj
+            and msg_obj.role == ChatRole.USER.value
+            and msg_obj.created_at < message.created_at
+        ):
+            user_message = msg_obj
+            break
+
+    if user_message is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": {
+                    "code": "NO_PRECEDING_USER_MESSAGE",
+                    "message": f"No preceding user message found for assistant message {message_id}",
+                }
+            },
+        )
+
+    # Build message pair
+    message_objects = [user_message, message]
+
+    # Build export metadata
+    metadata = None
+    if request.include_metadata:
+        metadata = ExportMetadata(
+            session_name=session.name or "Untitled Session",
+            session_id=session_id,
+            export_date=datetime.now(timezone.utc),
+            message_count=2,
+            include_timestamps=request.include_timestamps,
+        )
+
+    # Generate export
+    try:
+        exporter = get_exporter(request.format)
+        content = exporter.export(message_objects, metadata)
+        filename = exporter.generate_filename(f"{session_id}-{message_id[:8]}")
+
+        return Response(
+            content=content,
+            media_type=exporter.content_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+            },
+        )
+    except ExportGenerationError as e:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": {
+                    "code": "EXPORT_GENERATION_FAILED",
+                    "message": str(e),
+                }
+            },
+        )

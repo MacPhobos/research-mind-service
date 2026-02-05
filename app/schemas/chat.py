@@ -167,3 +167,35 @@ class ChatStreamHeartbeatEvent(BaseModel):
     """Event sent periodically to keep connection alive."""
 
     timestamp: str
+
+
+# ---------------------------------------------------------------------------
+# Chat Export Schemas
+# ---------------------------------------------------------------------------
+
+
+class ChatExportFormat(str, Enum):
+    """Supported export formats for chat history."""
+
+    PDF = "pdf"
+    MARKDOWN = "markdown"
+
+
+class ChatExportRequest(BaseModel):
+    """Request body for chat export endpoints."""
+
+    format: ChatExportFormat
+    include_metadata: bool = True
+    include_timestamps: bool = True
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "format": "pdf",
+                    "include_metadata": True,
+                    "include_timestamps": True,
+                }
+            ]
+        }
+    )
