@@ -127,6 +127,10 @@ class Settings(BaseSettings):
     claude_mpm_cli_path: str | None = None
     # SSE heartbeat interval (seconds) to prevent proxy timeouts
     sse_heartbeat_interval_seconds: int = 15
+    # Buffer limit for subprocess stdout/stderr streams (bytes).
+    # Prevents asyncio.LimitOverrunError when claude-mpm returns large tool
+    # results (e.g., file contents). Default 10MB handles most use cases.
+    subprocess_stream_buffer_limit: int = 10 * 1024 * 1024  # 10MB
 
 
 settings = Settings()

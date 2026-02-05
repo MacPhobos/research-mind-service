@@ -535,12 +535,15 @@ async def stream_claude_mpm_response(
         yield f"event: start\ndata: {start_event.model_dump_json()}\n\n"
 
         # Start subprocess with working directory set
+        # Use configurable buffer limit to prevent LimitOverrunError when
+        # claude-mpm returns large tool results (e.g., file contents)
         process = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env=env,
             cwd=workspace_path,  # Also set cwd for safety
+            limit=settings.subprocess_stream_buffer_limit,
         )
 
         # Stream stdout line by line with two-stage parsing
