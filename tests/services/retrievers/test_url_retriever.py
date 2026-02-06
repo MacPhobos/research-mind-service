@@ -475,7 +475,8 @@ class TestUrlRetrieverErrorMapping:
         """EmptyContentError maps to 'empty_content_error'."""
         retriever = UrlRetriever()
         assert (
-            retriever._get_error_type(EmptyContentError("test")) == "empty_content_error"
+            retriever._get_error_type(EmptyContentError("test"))
+            == "empty_content_error"
         )
 
     def test_get_error_type_rate_limit(self) -> None:

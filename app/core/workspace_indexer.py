@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 import subprocess
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -196,9 +196,7 @@ class WorkspaceIndexer:
             ) from exc
         except subprocess.TimeoutExpired as exc:
             elapsed = time.monotonic() - start
-            logger.error(
-                "Command timed out after %ds: %s", timeout, " ".join(cmd)
-            )
+            logger.error("Command timed out after %ds: %s", timeout, " ".join(cmd))
             raise IndexingTimeoutError(
                 f"Command timed out after {timeout}s: {' '.join(cmd)}"
             ) from exc

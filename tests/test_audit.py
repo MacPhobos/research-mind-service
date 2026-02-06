@@ -160,7 +160,9 @@ class TestAuditServiceLogging:
         assert logs[0].metadata_json["stdout_summary"] == "OK"
 
     def test_log_subprocess_spawn(self, db_session: Session):
-        AuditService.log_subprocess_spawn(db_session, "s5", "mcp-vector-search init", "/tmp/ws")
+        AuditService.log_subprocess_spawn(
+            db_session, "s5", "mcp-vector-search init", "/tmp/ws"
+        )
 
         logs = db_session.query(AuditLog).filter_by(session_id="s5").all()
         assert len(logs) == 1
@@ -169,7 +171,12 @@ class TestAuditServiceLogging:
 
     def test_log_subprocess_complete(self, db_session: Session):
         AuditService.log_subprocess_complete(
-            db_session, "s6", "mcp-vector-search index", 0, 3200, stdout_summary="indexed 42 files"
+            db_session,
+            "s6",
+            "mcp-vector-search index",
+            0,
+            3200,
+            stdout_summary="indexed 42 files",
         )
 
         logs = db_session.query(AuditLog).filter_by(session_id="s6").all()
@@ -248,9 +255,7 @@ class TestAuditServiceQuery:
 class TestAuditEndpoint:
     def test_audit_endpoint(self, client: TestClient):
         # Create a session first
-        create_resp = client.post(
-            "/api/v1/sessions/", json={"name": "Audit Test"}
-        )
+        create_resp = client.post("/api/v1/sessions/", json={"name": "Audit Test"})
         assert create_resp.status_code == 201
         session_id = create_resp.json()["session_id"]
 

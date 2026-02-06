@@ -9,7 +9,6 @@ from __future__ import annotations
 import os
 from unittest.mock import MagicMock, patch
 
-import pytest
 from fastapi.testclient import TestClient
 
 from app.core.workspace_indexer import IndexingResult
@@ -68,9 +67,7 @@ class TestFullFlowCreateSessionAndIndex:
 
         # Step 2: Index (mocked subprocess success)
         with _mock_indexer(success=True):
-            index_resp = shared_client.post(
-                f"/api/v1/workspaces/{session_id}/index"
-            )
+            index_resp = shared_client.post(f"/api/v1/workspaces/{session_id}/index")
         assert index_resp.status_code == 200
         index_data = index_resp.json()
         assert index_data["workspace_id"] == session_id
@@ -80,9 +77,7 @@ class TestFullFlowCreateSessionAndIndex:
 
         # Step 3: Check status -- without real subprocess the .mcp-vector-search
         # dir is NOT created, so status should be "not_initialized".
-        status_resp = shared_client.get(
-            f"/api/v1/workspaces/{session_id}/index/status"
-        )
+        status_resp = shared_client.get(f"/api/v1/workspaces/{session_id}/index/status")
         assert status_resp.status_code == 200
         status_data = status_resp.json()
         assert status_data["workspace_id"] == session_id
@@ -101,9 +96,7 @@ class TestFullFlowIndexThenCheckStatus:
         # Simulate the .mcp-vector-search directory being created
         os.makedirs(os.path.join(workspace_path, ".mcp-vector-search"))
 
-        status_resp = shared_client.get(
-            f"/api/v1/workspaces/{session_id}/index/status"
-        )
+        status_resp = shared_client.get(f"/api/v1/workspaces/{session_id}/index/status")
         assert status_resp.status_code == 200
         data = status_resp.json()
         assert data["is_indexed"] is True
@@ -122,22 +115,16 @@ class TestFullFlowSessionLifecycle:
 
         # Index (mocked)
         with _mock_indexer(success=True):
-            index_resp = shared_client.post(
-                f"/api/v1/workspaces/{session_id}/index"
-            )
+            index_resp = shared_client.post(f"/api/v1/workspaces/{session_id}/index")
         assert index_resp.status_code == 200
 
         # Get audit logs
-        audit_resp = shared_client.get(
-            f"/api/v1/sessions/{session_id}/audit"
-        )
+        audit_resp = shared_client.get(f"/api/v1/sessions/{session_id}/audit")
         assert audit_resp.status_code == 200
         assert "logs" in audit_resp.json()
 
         # Delete
-        delete_resp = shared_client.delete(
-            f"/api/v1/sessions/{session_id}"
-        )
+        delete_resp = shared_client.delete(f"/api/v1/sessions/{session_id}")
         assert delete_resp.status_code == 204
 
         # Verify cleanup: workspace dir removed
@@ -160,6 +147,6 @@ class TestSessionWorkspaceDirectoryCreated:
     def test_session_workspace_directory_created(self, shared_client: TestClient):
         session = _create_session(shared_client, "Dir Check")
         workspace_path = session["workspace_path"]
-        assert os.path.isdir(workspace_path), (
-            f"Workspace directory was not created on disk: {workspace_path}"
-        )
+        assert os.path.isdir(
+            workspace_path
+        ), f"Workspace directory was not created on disk: {workspace_path}"

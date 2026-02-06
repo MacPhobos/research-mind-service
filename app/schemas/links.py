@@ -122,6 +122,4 @@ class BatchContentResponse(BaseModel):
     success_count: int = Field(..., ge=0, description="Number of successful additions")
     error_count: int = Field(..., ge=0, description="Number of failed additions")
     duplicate_count: int = Field(..., ge=0, description="Number of duplicate URLs")
-    items: list[BatchContentItemResponse] = Field(
-        ..., description="Per-URL results"
-    )
+    items: list[BatchContentItemResponse] = Field(..., description="Per-URL results")

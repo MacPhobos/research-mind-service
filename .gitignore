@@ -14,3 +14,4 @@
 /.mcp-vector-search/
 /.venv/
 /content_sandboxes/
+/.env

@@ -21,11 +21,13 @@ def simple_pdf(tmp_path):
     page.insert_text((72, 72), "Hello, World!")
     page.insert_text((72, 100), "This is a simple PDF document.")
     page.insert_text((72, 128), "It contains multiple lines of text.")
-    doc.set_metadata({
-        "title": "Test Document",
-        "author": "Test Author",
-        "subject": "Test Subject",
-    })
+    doc.set_metadata(
+        {
+            "title": "Test Document",
+            "author": "Test Author",
+            "subject": "Test Subject",
+        }
+    )
     doc.save(str(pdf_path))
     doc.close()
     return pdf_path

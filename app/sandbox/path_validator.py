@@ -14,19 +14,21 @@ from urllib.parse import unquote
 logger = logging.getLogger(__name__)
 
 # System paths that must never be accessed
-BLOCKED_SYSTEM_PATHS: frozenset[str] = frozenset({
-    "/etc",
-    "/root",
-    "/home",
-    "/var",
-    "/sys",
-    "/proc",
-    "/dev",
-    "/bin",
-    "/sbin",
-    "/usr/bin",
-    "/usr/sbin",
-})
+BLOCKED_SYSTEM_PATHS: frozenset[str] = frozenset(
+    {
+        "/etc",
+        "/root",
+        "/home",
+        "/var",
+        "/sys",
+        "/proc",
+        "/dev",
+        "/bin",
+        "/sbin",
+        "/usr/bin",
+        "/usr/sbin",
+    }
+)
 
 # File patterns that indicate hidden or sensitive files
 HIDDEN_FILE_PREFIX = "."
@@ -195,9 +197,7 @@ class PathValidator:
         try:
             resolved = Path(workspace_path).resolve()
         except (OSError, ValueError):
-            logger.warning(
-                "SUBPROCESS_BLOCKED: Invalid path — '%s'", workspace_path
-            )
+            logger.warning("SUBPROCESS_BLOCKED: Invalid path — '%s'", workspace_path)
             return False
 
         # Must exist and be a directory

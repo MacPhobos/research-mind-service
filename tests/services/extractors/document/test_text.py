@@ -117,7 +117,10 @@ class TestTextExtractor:
         assert result.content is not None
         assert "Hello with BOM!" in result.content
         # Should detect utf-8-sig for BOM files
-        assert result.document_metadata.get("encoding_detected") in ["utf-8", "utf-8-sig"]
+        assert result.document_metadata.get("encoding_detected") in [
+            "utf-8",
+            "utf-8-sig",
+        ]
 
     @pytest.mark.asyncio
     async def test_extract_latin1_text(self, text_extractor, latin1_text_file):
@@ -176,7 +179,9 @@ class TestTextExtractor:
         assert "empty" in str(exc_info.value).lower()
 
     @pytest.mark.asyncio
-    async def test_whitespace_only_raises_error(self, text_extractor, whitespace_only_file):
+    async def test_whitespace_only_raises_error(
+        self, text_extractor, whitespace_only_file
+    ):
         """Test that whitespace-only file raises ValueError."""
         with pytest.raises(ValueError) as exc_info:
             await text_extractor.extract(whitespace_only_file)

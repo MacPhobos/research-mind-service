@@ -12,7 +12,6 @@ Tests cover:
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
@@ -88,9 +87,10 @@ class TestPathTraversalAttacks:
         assert validator.validate_path("..") is False
 
     def test_deeply_nested_traversal(self, validator: PathValidator) -> None:
-        assert validator.validate_path(
-            "content/../../../../../../../../../etc/shadow"
-        ) is False
+        assert (
+            validator.validate_path("content/../../../../../../../../../etc/shadow")
+            is False
+        )
 
     def test_backslash_traversal(self, validator: PathValidator) -> None:
         # On Unix, backslash is a valid filename char, but still should not
@@ -285,7 +285,9 @@ class TestSubprocessCwdValidation:
                 symlink_dir.symlink_to(external_dir)
             except OSError:
                 pytest.skip("Cannot create symlinks on this platform")
-            assert validator.validate_workspace_for_subprocess(str(symlink_dir)) is False
+            assert (
+                validator.validate_workspace_for_subprocess(str(symlink_dir)) is False
+            )
 
     def test_file_not_directory(self, workspace: Path) -> None:
         validator = PathValidator(workspace)
@@ -307,9 +309,7 @@ class TestSessionValidationMiddleware:
 
     def test_valid_uuid_sessions(self, client: TestClient) -> None:
         """Valid UUID should pass through middleware (may 404 from handler)."""
-        response = client.get(
-            "/api/v1/sessions/550e8400-e29b-41d4-a716-446655440000"
-        )
+        response = client.get("/api/v1/sessions/550e8400-e29b-41d4-a716-446655440000")
         # Should NOT be 400 — the middleware passes it through.
         # Route handler may return 404 (session not found) which is fine.
         assert response.status_code != 400

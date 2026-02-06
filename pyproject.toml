@@ -54,3 +54,8 @@ markers = [
 
 [tool.setuptools.packages]
 find = { where = ["."], include = ["app*"] }
+
+[dependency-groups]
+dev = [
+    "pytest>=7.4.3",
+]

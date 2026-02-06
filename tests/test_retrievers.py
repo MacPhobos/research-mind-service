@@ -34,14 +34,18 @@ def test_text_retriever_writes_content(tmp_path: Path) -> None:
     assert result.title == "Test Note"
 
 
-def test_text_retriever_rejects_oversized(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_text_retriever_rejects_oversized(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Text exceeding max_text_bytes returns success=False."""
     from app.services.retrievers.text_retriever import TextRetriever
 
     # Mock settings to use a small limit for testing
     mock_settings = MagicMock()
     mock_settings.max_text_bytes = 10  # Very small limit
-    monkeypatch.setattr("app.services.retrievers.text_retriever.settings", mock_settings)
+    monkeypatch.setattr(
+        "app.services.retrievers.text_retriever.settings", mock_settings
+    )
 
     retriever = TextRetriever()
     result = retriever.retrieve(
@@ -109,7 +113,9 @@ def test_file_upload_writes_file(tmp_path: Path) -> None:
     assert result.size_bytes == len(file_content)
 
 
-def test_file_upload_rejects_oversized(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_file_upload_rejects_oversized(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Design Doc Section 15: test_file_upload_retriever_rejects_oversized"""
     from app.services.retrievers.file_upload import FileUploadRetriever
 
@@ -170,7 +176,7 @@ def test_file_upload_default_filename(tmp_path: Path) -> None:
 
 def test_url_retriever_success(tmp_path: Path) -> None:
     """Mocked extraction returns content, written to content.md."""
-    from unittest.mock import AsyncMock, patch
+    from unittest.mock import AsyncMock
 
     from app.services.extractors.base import ExtractionResult
     from app.services.retrievers.url_retriever import UrlRetriever
@@ -204,7 +210,7 @@ def test_url_retriever_success(tmp_path: Path) -> None:
 
 def test_url_retriever_http_error(tmp_path: Path) -> None:
     """Network error returns success=False with error_type in metadata."""
-    from unittest.mock import AsyncMock, patch
+    from unittest.mock import AsyncMock
 
     from app.services.extractors.exceptions import NetworkError
     from app.services.retrievers.url_retriever import UrlRetriever
@@ -213,7 +219,9 @@ def test_url_retriever_http_error(tmp_path: Path) -> None:
         UrlRetriever,
         "_extract_async",
         new_callable=AsyncMock,
-        side_effect=NetworkError("HTTP 404 from https://example.com/notfound: Not Found"),
+        side_effect=NetworkError(
+            "HTTP 404 from https://example.com/notfound: Not Found"
+        ),
     ):
         retriever = UrlRetriever(timeout=10)
         result = retriever.retrieve(
@@ -228,7 +236,7 @@ def test_url_retriever_http_error(tmp_path: Path) -> None:
 
 def test_url_retriever_connection_error(tmp_path: Path) -> None:
     """Connection failure returns success=False."""
-    from unittest.mock import AsyncMock, patch
+    from unittest.mock import AsyncMock
 
     from app.services.extractors.exceptions import NetworkError
     from app.services.retrievers.url_retriever import UrlRetriever
@@ -237,7 +245,9 @@ def test_url_retriever_connection_error(tmp_path: Path) -> None:
         UrlRetriever,
         "_extract_async",
         new_callable=AsyncMock,
-        side_effect=NetworkError("Network error fetching https://unreachable.example.com: Connection refused"),
+        side_effect=NetworkError(
+            "Network error fetching https://unreachable.example.com: Connection refused"
+        ),
     ):
         retriever = UrlRetriever(timeout=10)
         result = retriever.retrieve(
@@ -251,7 +261,7 @@ def test_url_retriever_connection_error(tmp_path: Path) -> None:
 
 def test_url_retriever_oversized_response(tmp_path: Path) -> None:
     """Response exceeding max size returns success=False."""
-    from unittest.mock import AsyncMock, patch
+    from unittest.mock import AsyncMock
 
     from app.services.extractors.exceptions import ContentTooLargeError
     from app.services.retrievers.url_retriever import UrlRetriever
@@ -260,7 +270,9 @@ def test_url_retriever_oversized_response(tmp_path: Path) -> None:
         UrlRetriever,
         "_extract_async",
         new_callable=AsyncMock,
-        side_effect=ContentTooLargeError("Content size 100000000 exceeds maximum 52428800"),
+        side_effect=ContentTooLargeError(
+            "Content size 100000000 exceeds maximum 52428800"
+        ),
     ):
         retriever = UrlRetriever()
         result = retriever.retrieve(
@@ -276,7 +288,9 @@ def test_url_retriever_oversized_response(tmp_path: Path) -> None:
 # --- GitRepoRetriever Tests ---
 
 
-def test_git_repo_handles_missing_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_git_repo_handles_missing_git(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Design Doc Section 15: monkeypatch subprocess.run to raise FileNotFoundError"""
     from app.services.retrievers.git_repo import GitRepoRetriever
 
@@ -296,7 +310,9 @@ def test_git_repo_handles_missing_git(tmp_path: Path, monkeypatch: pytest.Monkey
     assert "git CLI not found" in result.error_message
 
 
-def test_git_repo_handles_clone_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_git_repo_handles_clone_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Non-zero exit code returns success=False with stderr."""
     from app.services.retrievers.git_repo import GitRepoRetriever
 
@@ -317,7 +333,9 @@ def test_git_repo_handles_clone_failure(tmp_path: Path, monkeypatch: pytest.Monk
     assert "repository not found" in result.error_message
 
 
-def test_git_repo_handles_timeout(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_git_repo_handles_timeout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """TimeoutExpired returns success=False."""
     from app.services.retrievers.git_repo import GitRepoRetriever
 
@@ -337,7 +355,9 @@ def test_git_repo_handles_timeout(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     assert "timed out" in result.error_message
 
 
-def test_git_repo_derives_title_from_url(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_git_repo_derives_title_from_url(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Title derived from clone URL when not provided."""
     from app.services.retrievers.git_repo import GitRepoRetriever
 

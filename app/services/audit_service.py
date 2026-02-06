@@ -100,7 +100,9 @@ class AuditService:
             session_id,
             "index_complete",
             duration_ms=elapsed_ms,
-            metadata_json={"stdout_summary": stdout_summary} if stdout_summary else None,
+            metadata_json={"stdout_summary": stdout_summary}
+            if stdout_summary
+            else None,
         )
 
     @staticmethod

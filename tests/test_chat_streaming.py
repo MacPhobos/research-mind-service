@@ -6,7 +6,6 @@ and extract metadata from result events.
 
 from __future__ import annotations
 
-import pytest
 
 from app.schemas.chat import (
     ChatStreamEventType,

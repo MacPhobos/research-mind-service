@@ -20,15 +20,17 @@ class Session(Base):
 
     __tablename__ = "sessions"
 
-    session_id: str = Column(
-        String(36), primary_key=True, default=lambda: str(uuid4())
-    )
+    session_id: str = Column(String(36), primary_key=True, default=lambda: str(uuid4()))
     name: str = Column(String(255), nullable=False)
     description: str | None = Column(String(1024), nullable=True)
     workspace_path: str = Column(String(512), nullable=False, unique=True)
 
-    created_at: datetime = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
-    last_accessed: datetime = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    created_at: datetime = Column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+    last_accessed: datetime = Column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
 
     status: str = Column(String(50), nullable=False, default="active")
     archived: bool = Column(Boolean, nullable=False, default=False)
@@ -61,7 +63,9 @@ class Session(Base):
             "description": self.description,
             "workspace_path": self.workspace_path,
             "created_at": self.created_at.isoformat() if self.created_at else None,
-            "last_accessed": self.last_accessed.isoformat() if self.last_accessed else None,
+            "last_accessed": self.last_accessed.isoformat()
+            if self.last_accessed
+            else None,
             "status": self.status,
             "archived": self.archived,
             "ttl_seconds": self.ttl_seconds,

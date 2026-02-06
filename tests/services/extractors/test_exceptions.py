@@ -88,7 +88,9 @@ class TestExceptionCatching:
             except ExtractionError as e:
                 assert str(e) == "test"
             except Exception:
-                assert False, f"Expected {type(error).__name__} to be caught as ExtractionError"
+                assert (
+                    False
+                ), f"Expected {type(error).__name__} to be caught as ExtractionError"
 
     def test_catch_specific_errors(self) -> None:
         """Test that specific errors can be caught individually."""

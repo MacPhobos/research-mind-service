@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from app.core.workspace_indexer import IndexingResult, WorkspaceIndexer
+from app.core.workspace_indexer import WorkspaceIndexer
 from app.services.indexing_service import IndexingService
 
 
@@ -80,22 +80,16 @@ class TestWorkspaceIndexStatusIndependent:
 
 
 class TestDeletingOneSessionDoesntAffectOther:
-    def test_deleting_one_session_doesnt_affect_other(
-        self, shared_client: TestClient
-    ):
+    def test_deleting_one_session_doesnt_affect_other(self, shared_client: TestClient):
         s1 = _create_session(shared_client, "Keep Me")
         s2 = _create_session(shared_client, "Delete Me")
 
         # Delete s2
-        del_resp = shared_client.delete(
-            f"/api/v1/sessions/{s2['session_id']}"
-        )
+        del_resp = shared_client.delete(f"/api/v1/sessions/{s2['session_id']}")
         assert del_resp.status_code == 204
 
         # s1 should still be accessible
-        get_resp = shared_client.get(
-            f"/api/v1/sessions/{s1['session_id']}"
-        )
+        get_resp = shared_client.get(f"/api/v1/sessions/{s1['session_id']}")
         assert get_resp.status_code == 200
         assert get_resp.json()["name"] == "Keep Me"
 
@@ -113,9 +107,7 @@ class TestConcurrentIndexingMocked:
     def test_concurrent_indexing_mocked(
         self, mock_run, test_workspace_pair: tuple[Path, Path]
     ):
-        mock_run.return_value = _make_completed_process(
-            returncode=0, stdout="OK"
-        )
+        mock_run.return_value = _make_completed_process(returncode=0, stdout="OK")
 
         ws_a, ws_b = test_workspace_pair
 
@@ -148,9 +140,7 @@ class TestConcurrentIndexingMocked:
 class TestParallelRealIndexing:
     """Real subprocess, two workspaces indexed in ThreadPoolExecutor."""
 
-    def test_parallel_real_indexing(
-        self, test_workspace_pair: tuple[Path, Path]
-    ):
+    def test_parallel_real_indexing(self, test_workspace_pair: tuple[Path, Path]):
         ws_a, ws_b = test_workspace_pair
 
         def index_workspace(ws: Path) -> bool:

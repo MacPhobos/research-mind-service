@@ -2111,6 +2111,11 @@ dev = [
     { name = "ruff" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "alembic", specifier = ">=1.12.0" },
@@ -2146,6 +2151,9 @@ requires-dist = [
     { name = "weasyprint", specifier = ">=62.0" },
 ]
 provides-extras = ["dev"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = ">=7.4.3" }]
 
 [[package]]
 name = "rsa"

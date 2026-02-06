@@ -18,7 +18,6 @@ import pytest
 from app.core.workspace_indexer import (
     IndexingCommandError,
     IndexingTimeoutError,
-    ToolNotFoundError,
     WorkspaceIndexer,
 )
 from app.services.indexing_service import IndexingService
@@ -192,4 +191,6 @@ class TestRealIndexArtifactsCreated:
         assert index_dir.is_dir()
         # The directory should have some content after indexing
         contents = list(index_dir.iterdir())
-        assert len(contents) > 0, ".mcp-vector-search/ should not be empty after indexing"
+        assert (
+            len(contents) > 0
+        ), ".mcp-vector-search/ should not be empty after indexing"

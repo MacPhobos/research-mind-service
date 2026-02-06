@@ -11,14 +11,13 @@ Tests cover:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
 
 from app.services.link_extractor import (
-    CategorizedLinks,
     ExtractedLink,
     ExtractedLinksResult,
     LinkExtractionError,
@@ -123,17 +122,21 @@ HTML_WITH_RELATIVE_URLS = """
 </html>
 """
 
-HTML_WITH_LONG_TEXT = """
+HTML_WITH_LONG_TEXT = (
+    """
 <!DOCTYPE html>
 <html>
 <head><title>Long Text</title></head>
 <body>
 <main>
-    <a href="/link">""" + "A" * 300 + """</a>
+    <a href="/link">"""
+    + "A" * 300
+    + """</a>
 </main>
 </body>
 </html>
 """
+)
 
 HTML_NO_TITLE = """
 <!DOCTYPE html>
@@ -261,7 +264,9 @@ class TestParseLinksResolvesUrls:
     def test_parse_links_resolves_relative(self):
         """_parse_links converts relative paths to absolute URLs."""
         extractor = LinkExtractor()
-        links = extractor._parse_links(HTML_WITH_RELATIVE_URLS, "https://example.com/dir/page")
+        links = extractor._parse_links(
+            HTML_WITH_RELATIVE_URLS, "https://example.com/dir/page"
+        )
 
         urls = [link.url for link in links]
         assert "https://example.com/absolute-path" in urls
@@ -361,8 +366,18 @@ class TestCategorizeLinks:
         """_categorize_links puts main/article links in main_content."""
         extractor = LinkExtractor()
         links = [
-            ExtractedLink(url="https://example.com/1", text="", is_external=False, source_element="main"),
-            ExtractedLink(url="https://example.com/2", text="", is_external=False, source_element="article"),
+            ExtractedLink(
+                url="https://example.com/1",
+                text="",
+                is_external=False,
+                source_element="main",
+            ),
+            ExtractedLink(
+                url="https://example.com/2",
+                text="",
+                is_external=False,
+                source_element="article",
+            ),
         ]
 
         categories = extractor._categorize_links(links)
@@ -377,8 +392,18 @@ class TestCategorizeLinks:
         """_categorize_links puts nav/header links in navigation."""
         extractor = LinkExtractor()
         links = [
-            ExtractedLink(url="https://example.com/1", text="", is_external=False, source_element="nav"),
-            ExtractedLink(url="https://example.com/2", text="", is_external=False, source_element="header"),
+            ExtractedLink(
+                url="https://example.com/1",
+                text="",
+                is_external=False,
+                source_element="nav",
+            ),
+            ExtractedLink(
+                url="https://example.com/2",
+                text="",
+                is_external=False,
+                source_element="header",
+            ),
         ]
 
         categories = extractor._categorize_links(links)
@@ -390,7 +415,12 @@ class TestCategorizeLinks:
         """_categorize_links puts aside links in sidebar."""
         extractor = LinkExtractor()
         links = [
-            ExtractedLink(url="https://example.com/1", text="", is_external=False, source_element="aside"),
+            ExtractedLink(
+                url="https://example.com/1",
+                text="",
+                is_external=False,
+                source_element="aside",
+            ),
         ]
 
         categories = extractor._categorize_links(links)
@@ -401,7 +431,12 @@ class TestCategorizeLinks:
         """_categorize_links puts footer links in footer."""
         extractor = LinkExtractor()
         links = [
-            ExtractedLink(url="https://example.com/1", text="", is_external=False, source_element="footer"),
+            ExtractedLink(
+                url="https://example.com/1",
+                text="",
+                is_external=False,
+                source_element="footer",
+            ),
         ]
 
         categories = extractor._categorize_links(links)
@@ -412,8 +447,18 @@ class TestCategorizeLinks:
         """_categorize_links puts unknown source elements in other."""
         extractor = LinkExtractor()
         links = [
-            ExtractedLink(url="https://example.com/1", text="", is_external=False, source_element="other"),
-            ExtractedLink(url="https://example.com/2", text="", is_external=False, source_element="div"),
+            ExtractedLink(
+                url="https://example.com/1",
+                text="",
+                is_external=False,
+                source_element="other",
+            ),
+            ExtractedLink(
+                url="https://example.com/2",
+                text="",
+                is_external=False,
+                source_element="div",
+            ),
         ]
 
         categories = extractor._categorize_links(links)
@@ -446,7 +491,9 @@ class TestExtractMethod:
         extractor = LinkExtractor()
 
         # Mock _fetch_page using patch
-        with patch.object(extractor, "_fetch_page", new_callable=AsyncMock, return_value=SEMANTIC_HTML):
+        with patch.object(
+            extractor, "_fetch_page", new_callable=AsyncMock, return_value=SEMANTIC_HTML
+        ):
             result = await extractor.extract("https://example.com")
 
         assert isinstance(result, ExtractedLinksResult)
@@ -460,16 +507,20 @@ class TestExtractMethod:
         """extract(include_external=False) excludes external links."""
         extractor = LinkExtractor()
 
-        with patch.object(extractor, "_fetch_page", new_callable=AsyncMock, return_value=SIMPLE_HTML):
-            result = await extractor.extract("https://example.com", include_external=False)
+        with patch.object(
+            extractor, "_fetch_page", new_callable=AsyncMock, return_value=SIMPLE_HTML
+        ):
+            result = await extractor.extract(
+                "https://example.com", include_external=False
+            )
 
         # Only internal link should remain
         all_links = (
-            result.categories.main_content +
-            result.categories.navigation +
-            result.categories.sidebar +
-            result.categories.footer +
-            result.categories.other
+            result.categories.main_content
+            + result.categories.navigation
+            + result.categories.sidebar
+            + result.categories.footer
+            + result.categories.other
         )
         assert all(not link.is_external for link in all_links)
 
@@ -478,7 +529,9 @@ class TestExtractMethod:
         """extract() handles pages without title tag."""
         extractor = LinkExtractor()
 
-        with patch.object(extractor, "_fetch_page", new_callable=AsyncMock, return_value=HTML_NO_TITLE):
+        with patch.object(
+            extractor, "_fetch_page", new_callable=AsyncMock, return_value=HTML_NO_TITLE
+        ):
             result = await extractor.extract("https://example.com")
 
         assert result.page_title is None
@@ -488,7 +541,9 @@ class TestExtractMethod:
         """extract() correctly categorizes links by source element."""
         extractor = LinkExtractor()
 
-        with patch.object(extractor, "_fetch_page", new_callable=AsyncMock, return_value=SEMANTIC_HTML):
+        with patch.object(
+            extractor, "_fetch_page", new_callable=AsyncMock, return_value=SEMANTIC_HTML
+        ):
             result = await extractor.extract("https://example.com")
 
         # Check categories are populated
@@ -529,7 +584,9 @@ class TestFetchPageErrors:
         extractor = LinkExtractor()
 
         mock_client = AsyncMock()
-        mock_client.__aenter__.return_value.get = AsyncMock(side_effect=httpx.TimeoutException("Timeout"))
+        mock_client.__aenter__.return_value.get = AsyncMock(
+            side_effect=httpx.TimeoutException("Timeout")
+        )
 
         with patch("httpx.AsyncClient", return_value=mock_client):
             with pytest.raises(LinkExtractionError) as exc_info:
@@ -545,7 +602,9 @@ class TestFetchPageErrors:
         extractor = LinkExtractor()
 
         mock_client = AsyncMock()
-        mock_client.__aenter__.return_value.get = AsyncMock(side_effect=httpx.TooManyRedirects("Too many redirects"))
+        mock_client.__aenter__.return_value.get = AsyncMock(
+            side_effect=httpx.TooManyRedirects("Too many redirects")
+        )
 
         with patch("httpx.AsyncClient", return_value=mock_client):
             with pytest.raises(LinkExtractionError) as exc_info:

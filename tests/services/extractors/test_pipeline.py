@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
 
-from app.services.extractors.base import ExtractionConfig, ExtractionResult
+from app.services.extractors.base import ExtractionConfig
 from app.services.extractors.exceptions import (
     ContentTooLargeError,
     ContentTypeError,

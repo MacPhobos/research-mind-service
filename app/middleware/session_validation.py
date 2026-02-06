@@ -47,7 +47,7 @@ class SessionValidationMiddleware(BaseHTTPMiddleware):
         for prefix in _PROTECTED_PREFIXES:
             if path.startswith(prefix):
                 # Extract the ID segment after the prefix
-                remainder = path[len(prefix):]
+                remainder = path[len(prefix) :]
                 # The ID is the first path segment
                 id_segment = remainder.split("/")[0] if remainder else ""
 

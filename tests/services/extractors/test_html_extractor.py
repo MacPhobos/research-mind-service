@@ -143,7 +143,9 @@ class TestHTMLExtractor:
     def test_complex_html_extraction(self) -> None:
         """Test extraction from HTML with complex structure."""
         extractor = HTMLExtractor()
-        result = extractor.extract(HTML_WITH_COMPLEX_CONTENT, "https://example.com/complex")
+        result = extractor.extract(
+            HTML_WITH_COMPLEX_CONTENT, "https://example.com/complex"
+        )
 
         assert result.content
         # Title may be from <title> tag or H1

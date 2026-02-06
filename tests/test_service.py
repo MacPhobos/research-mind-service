@@ -195,9 +195,7 @@ class TestWorkspaceIndexerSubprocess:
         assert "--force" not in result.command
 
     @patch("app.core.workspace_indexer.subprocess.run")
-    def test_timeout_raises(
-        self, mock_run: MagicMock, tmp_workspace: Path
-    ) -> None:
+    def test_timeout_raises(self, mock_run: MagicMock, tmp_workspace: Path) -> None:
         mock_run.side_effect = subprocess.TimeoutExpired(
             cmd=["mcp-vector-search", "index", "--force"], timeout=5
         )

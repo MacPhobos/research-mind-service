@@ -161,7 +161,9 @@ def assistant_message_id(session_with_messages) -> str:
 class TestExportChatHistory:
     """Tests for POST /{session_id}/chat/export endpoint."""
 
-    def test_export_markdown_success(self, client: TestClient, session_with_messages: str):
+    def test_export_markdown_success(
+        self, client: TestClient, session_with_messages: str
+    ):
         """Test successful markdown export."""
         response = client.post(
             f"/api/v1/sessions/{session_with_messages}/chat/export",
@@ -246,7 +248,9 @@ class TestExportChatHistory:
         data = response.json()
         assert data["detail"]["error"]["code"] == "NO_CHAT_MESSAGES"
 
-    def test_export_invalid_format(self, client: TestClient, session_with_messages: str):
+    def test_export_invalid_format(
+        self, client: TestClient, session_with_messages: str
+    ):
         """Test export with invalid format."""
         response = client.post(
             f"/api/v1/sessions/{session_with_messages}/chat/export",

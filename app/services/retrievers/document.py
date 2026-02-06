@@ -100,7 +100,11 @@ class DocumentRetriever:
                 size_bytes=0,
                 mime_type=None,
                 title=title or source_path.name,
-                metadata={"source_path": source, "file_extension": file_ext, **(metadata or {})},
+                metadata={
+                    "source_path": source,
+                    "file_extension": file_ext,
+                    **(metadata or {}),
+                },
                 error_message=(
                     f"Unsupported file extension: {file_ext}. "
                     f"Supported: {', '.join(sorted(SUPPORTED_EXTENSIONS))}"
@@ -116,7 +120,11 @@ class DocumentRetriever:
                 size_bytes=0,
                 mime_type=None,
                 title=title or source_path.name,
-                metadata={"source_path": source, "file_extension": file_ext, **(metadata or {})},
+                metadata={
+                    "source_path": source,
+                    "file_extension": file_ext,
+                    **(metadata or {}),
+                },
                 error_message=f"No extractor found for extension: {file_ext}",
             )
 

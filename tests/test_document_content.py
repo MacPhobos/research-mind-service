@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import patch
 
 import fitz  # PyMuPDF
 import pytest
@@ -363,9 +362,7 @@ class TestDocumentContentSuccess:
         assert content_file.exists()
         assert content_file.read_text() == md_content
 
-    def test_add_document_with_title_override(
-        self, client: TestClient, tmp_path: Path
-    ):
+    def test_add_document_with_title_override(self, client: TestClient, tmp_path: Path):
         """POST document with custom title uses that title instead of filename."""
         session = _create_session(client)
         session_id = session["session_id"]
@@ -490,9 +487,7 @@ class TestDocumentContentErrors:
         assert "unsupported" in data["error_message"].lower()
         assert ".xlsx" in data["error_message"]
 
-    def test_add_document_encrypted_pdf_error(
-        self, client: TestClient, tmp_path: Path
-    ):
+    def test_add_document_encrypted_pdf_error(self, client: TestClient, tmp_path: Path):
         """POST encrypted PDF returns status=error."""
         session = _create_session(client)
         session_id = session["session_id"]
@@ -517,9 +512,7 @@ class TestDocumentContentErrors:
         assert data["error_message"] is not None
         assert "encrypted" in data["error_message"].lower()
 
-    def test_add_document_empty_file_error(
-        self, client: TestClient, tmp_path: Path
-    ):
+    def test_add_document_empty_file_error(self, client: TestClient, tmp_path: Path):
         """POST empty TXT file returns status=error."""
         session = _create_session(client)
         session_id = session["session_id"]
@@ -569,7 +562,10 @@ class TestDocumentContentErrors:
         data = response.json()
         assert data["status"] == "error"
         assert data["error_message"] is not None
-        assert "corrupt" in data["error_message"].lower() or "failed" in data["error_message"].lower()
+        assert (
+            "corrupt" in data["error_message"].lower()
+            or "failed" in data["error_message"].lower()
+        )
 
     def test_add_document_file_not_found_error(
         self, client: TestClient, tmp_path: Path
@@ -597,9 +593,7 @@ class TestDocumentContentErrors:
         assert data["error_message"] is not None
         assert "not found" in data["error_message"].lower()
 
-    def test_add_document_invalid_session(
-        self, client: TestClient, tmp_path: Path
-    ):
+    def test_add_document_invalid_session(self, client: TestClient, tmp_path: Path):
         """POST to non-existent session returns 404."""
         fake_session_id = "00000000-0000-4000-a000-000000000000"
 
@@ -665,14 +659,10 @@ class TestDocumentContentLifecycle:
         assert not content_dir.exists()
 
         # Verify GET returns 404
-        get_response = client.get(
-            f"/api/v1/sessions/{session_id}/content/{content_id}"
-        )
+        get_response = client.get(f"/api/v1/sessions/{session_id}/content/{content_id}")
         assert get_response.status_code == 404
 
-    def test_document_appears_in_content_list(
-        self, client: TestClient, tmp_path: Path
-    ):
+    def test_document_appears_in_content_list(self, client: TestClient, tmp_path: Path):
         """Document content items appear in session content list."""
         session = _create_session(client)
         session_id = session["session_id"]
@@ -685,11 +675,19 @@ class TestDocumentContentLifecycle:
 
         client.post(
             f"/api/v1/sessions/{session_id}/content/",
-            data={"content_type": "document", "title": "PDF Doc", "source": str(pdf_path)},
+            data={
+                "content_type": "document",
+                "title": "PDF Doc",
+                "source": str(pdf_path),
+            },
         )
         client.post(
             f"/api/v1/sessions/{session_id}/content/",
-            data={"content_type": "document", "title": "TXT Doc", "source": str(txt_path)},
+            data={
+                "content_type": "document",
+                "title": "TXT Doc",
+                "source": str(txt_path),
+            },
         )
 
         # List content

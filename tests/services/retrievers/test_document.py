@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import pytest
 
 from app.services.extractors.document.base import ExtractionResult
 from app.services.retrievers.document import (
@@ -70,7 +69,9 @@ class TestDocumentRetrieverSuccess:
         assert "extracted_at" in meta
         assert meta["document_metadata"]["title"] == "Test PDF Document"
         assert meta["document_metadata"]["author"] == "Test Author"
-        assert meta["content_stats"]["word_count"] == 10  # "# Document Title This is the extracted content from PDF."
+        assert (
+            meta["content_stats"]["word_count"] == 10
+        )  # "# Document Title This is the extracted content from PDF."
 
     def test_extract_docx_success(self, tmp_path: Path) -> None:
         """Successful DOCX extraction stores markdown and metadata."""

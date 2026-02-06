@@ -16,7 +16,6 @@ from sqlalchemy.pool import StaticPool
 import app.models  # noqa: F401  -- ensure models registered with Base.metadata
 from app.core.workspace_indexer import (
     IndexingResult,
-    WorkspaceIndexer,
     WorkspaceNotFoundError,
 )
 from app.db.base import Base
@@ -204,14 +203,18 @@ def _create_session(client: TestClient, name: str = "Test Session") -> dict:
 class TestIndexEndpoints:
     def test_index_endpoint_session_not_found(self, client: TestClient):
         """POST /api/v1/workspaces/{id}/index returns 404 for unknown session."""
-        response = client.post("/api/v1/workspaces/00000000-0000-4000-a000-000000000000/index")
+        response = client.post(
+            "/api/v1/workspaces/00000000-0000-4000-a000-000000000000/index"
+        )
         assert response.status_code == 404
         data = response.json()
         assert data["detail"]["error"]["code"] == "SESSION_NOT_FOUND"
 
     def test_index_status_endpoint_session_not_found(self, client: TestClient):
         """GET /api/v1/workspaces/{id}/index/status returns 404 for unknown session."""
-        response = client.get("/api/v1/workspaces/00000000-0000-4000-a000-000000000000/index/status")
+        response = client.get(
+            "/api/v1/workspaces/00000000-0000-4000-a000-000000000000/index/status"
+        )
         assert response.status_code == 404
         data = response.json()
         assert data["detail"]["error"]["code"] == "SESSION_NOT_FOUND"

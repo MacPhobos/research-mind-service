@@ -7,7 +7,12 @@ import logging
 from fastapi import APIRouter, HTTPException
 from pydantic import ValidationError
 
-from app.schemas.links import ExtractLinksRequest, ExtractedLinksResponse, ExtractedLinkSchema, CategorizedLinksSchema
+from app.schemas.links import (
+    ExtractLinksRequest,
+    ExtractedLinksResponse,
+    ExtractedLinkSchema,
+    CategorizedLinksSchema,
+)
 from app.services.link_extractor import LinkExtractor, LinkExtractionError
 
 logger = logging.getLogger(__name__)
@@ -36,7 +41,9 @@ async def extract_links(request: ExtractLinksRequest) -> ExtractedLinksResponse:
     try:
         # Convert HttpUrl to string for the extractor
         url_str = str(request.url)
-        result = await extractor.extract(url_str, include_external=request.include_external)
+        result = await extractor.extract(
+            url_str, include_external=request.include_external
+        )
 
         # Convert service result to response schema
         return ExtractedLinksResponse(

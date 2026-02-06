@@ -126,7 +126,9 @@ class TestClearChatHistory:
             _create_chat_message(db, session_id, "user", "How are you?")
 
             # Verify messages exist
-            message_count = db.query(ChatMessage).filter_by(session_id=session_id).count()
+            message_count = (
+                db.query(ChatMessage).filter_by(session_id=session_id).count()
+            )
             assert message_count == 3
         finally:
             db.close()
@@ -139,7 +141,9 @@ class TestClearChatHistory:
         # Verify messages are deleted
         db = TestingSessionLocal()
         try:
-            message_count = db.query(ChatMessage).filter_by(session_id=session_id).count()
+            message_count = (
+                db.query(ChatMessage).filter_by(session_id=session_id).count()
+            )
             assert message_count == 0
         finally:
             db.close()

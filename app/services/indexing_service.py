@@ -9,10 +9,7 @@ from app.core.config import settings
 from app.core.workspace_indexer import (
     IndexingCommandError,
     IndexingResult,
-    IndexingTimeoutError,
-    ToolNotFoundError,
     WorkspaceIndexer,
-    WorkspaceNotFoundError,
 )
 from app.sandbox.path_validator import PathValidator
 
@@ -69,11 +66,13 @@ class IndexingService:
         indexer = WorkspaceIndexer(path)
 
         init_timeout = settings.subprocess_timeout_init
-        index_timeout = timeout if timeout is not None else settings.subprocess_timeout_index
+        index_timeout = (
+            timeout if timeout is not None else settings.subprocess_timeout_index
+        )
 
         # Step 1: Initialize
         try:
-            init_result = indexer.initialize(timeout=init_timeout)
+            indexer.initialize(timeout=init_timeout)
         except IndexingCommandError as exc:
             logger.warning("Init failed for %s: %s", workspace_path, exc)
             return IndexingResult(

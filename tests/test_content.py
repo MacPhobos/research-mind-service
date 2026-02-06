@@ -13,11 +13,9 @@ from __future__ import annotations
 
 import io
 import json
-import os
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import httpx
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -163,7 +161,10 @@ class TestAddContent:
         assert content_dir.exists()
         content_file = content_dir / "content.txt"
         assert content_file.exists()
-        assert content_file.read_text() == "This is some test text content for the research session."
+        assert (
+            content_file.read_text()
+            == "This is some test text content for the research session."
+        )
 
     @pytest.mark.skip(
         reason="File upload route stores bytes in metadata_json which fails JSON "
@@ -468,9 +469,7 @@ class TestGetContent:
         content_id = create_response.json()["content_id"]
 
         # Get content
-        response = client.get(
-            f"/api/v1/sessions/{session_id}/content/{content_id}"
-        )
+        response = client.get(f"/api/v1/sessions/{session_id}/content/{content_id}")
 
         assert response.status_code == 200
         data = response.json()
@@ -551,9 +550,7 @@ class TestDeleteContent:
         assert content_dir.exists()
 
         # Delete content
-        response = client.delete(
-            f"/api/v1/sessions/{session_id}/content/{content_id}"
-        )
+        response = client.delete(f"/api/v1/sessions/{session_id}/content/{content_id}")
         assert response.status_code == 204
 
         # Verify removed from list
@@ -565,9 +562,7 @@ class TestDeleteContent:
         assert not content_dir.exists()
 
         # Verify GET returns 404
-        get_response = client.get(
-            f"/api/v1/sessions/{session_id}/content/{content_id}"
-        )
+        get_response = client.get(f"/api/v1/sessions/{session_id}/content/{content_id}")
         assert get_response.status_code == 404
 
     def test_delete_content_not_found(self, client: TestClient):
@@ -593,9 +588,7 @@ class TestDeleteContent:
 class TestCascadeCleanup:
     """Tests for session deletion cascading to content."""
 
-    def test_session_delete_cascades_content(
-        self, client: TestClient, db_engine
-    ):
+    def test_session_delete_cascades_content(self, client: TestClient, db_engine):
         """Deleting session removes content DB records via CASCADE."""
         session = _create_session(client)
         session_id = session["session_id"]

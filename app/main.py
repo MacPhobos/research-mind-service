@@ -56,6 +56,7 @@ def _verify_mcp_cli() -> str | None:
         return path
     return None
 
+
 def _verify_claude_mpm_cli() -> str | None:
     """Check that claude-mpm CLI is available on PATH.
 
@@ -66,6 +67,7 @@ def _verify_claude_mpm_cli() -> str | None:
         logger.debug("claude-mpm found at: %s", path)
         return path
     return None
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
@@ -93,12 +95,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     mcp_vector_search_cli_presence = _verify_mcp_cli()
     if mcp_vector_search_cli_presence:
-        logger.info("mcp-vector-search CLI detected at: %s", mcp_vector_search_cli_presence)
+        logger.info(
+            "mcp-vector-search CLI detected at: %s", mcp_vector_search_cli_presence
+        )
     else:
         logger.warning(
             "mcp-vector-search CLI not found on PATH. "
             "Indexing features will be unavailable. "
-            "PATH: %s", os.environ.get("PATH", "")
+            "PATH: %s",
+            os.environ.get("PATH", ""),
         )
 
     claude_mpm_cli_presence = _verify_claude_mpm_cli()
@@ -108,7 +113,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.warning(
             "claude_mpm CLI not found on PATH. "
             "Indexing features will be unavailable. "
-            "PATH: %s", os.environ.get("PATH", "")
+            "PATH: %s",
+            os.environ.get("PATH", ""),
         )
 
     # Ensure content sandbox root directory exists

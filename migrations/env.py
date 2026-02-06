@@ -15,8 +15,8 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # Import all models so Base.metadata is populated
-import app.models  # noqa: F401
-from app.db.base import Base
+import app.models  # noqa: F401, E402
+from app.db.base import Base  # noqa: E402
 
 target_metadata = Base.metadata
 
@@ -49,9 +49,7 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection, target_metadata=target_metadata
-        )
+        context.configure(connection=connection, target_metadata=target_metadata)
 
         with context.begin_transaction():
             context.run_migrations()

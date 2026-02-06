@@ -102,7 +102,9 @@ def test_session(client: TestClient) -> dict:
 # -----------------------------------------------------------------------------
 
 
-def _mock_url_extraction(return_value: ExtractionResult | None = None, side_effect=None):
+def _mock_url_extraction(
+    return_value: ExtractionResult | None = None, side_effect=None
+):
     """Create a patch for UrlRetriever._extract_async."""
     if return_value is None and side_effect is None:
         return_value = ExtractionResult(
@@ -215,7 +217,9 @@ class TestBatchAddContent:
 class TestBatchAddDuplicates:
     """Tests for duplicate detection in batch add."""
 
-    def test_batch_detects_existing_duplicate(self, client: TestClient, test_session: dict):
+    def test_batch_detects_existing_duplicate(
+        self, client: TestClient, test_session: dict
+    ):
         """POST detects URLs already in session."""
         session_id = test_session["session_id"]
 
@@ -251,7 +255,9 @@ class TestBatchAddDuplicates:
         assert "success" in items_by_status
         assert items_by_status["duplicate"]["url"] == "https://example.com/existing"
 
-    def test_batch_detects_intra_batch_duplicate(self, client: TestClient, test_session: dict):
+    def test_batch_detects_intra_batch_duplicate(
+        self, client: TestClient, test_session: dict
+    ):
         """POST detects duplicate URLs within the same batch."""
         session_id = test_session["session_id"]
 
@@ -261,7 +267,9 @@ class TestBatchAddDuplicates:
                 json={
                     "urls": [
                         {"url": "https://example.com/same-url"},
-                        {"url": "https://example.com/same-url"},  # Duplicate within batch
+                        {
+                            "url": "https://example.com/same-url"
+                        },  # Duplicate within batch
                         {"url": "https://example.com/different"},
                     ],
                 },
@@ -275,11 +283,15 @@ class TestBatchAddDuplicates:
         assert data["duplicate_count"] == 1  # Second occurrence of same-url
 
         # Find the duplicate item
-        duplicate_items = [item for item in data["items"] if item["status"] == "duplicate"]
+        duplicate_items = [
+            item for item in data["items"] if item["status"] == "duplicate"
+        ]
         assert len(duplicate_items) == 1
         assert duplicate_items[0]["error"] == "Duplicate URL within batch"
 
-    def test_batch_duplicate_has_no_content_id(self, client: TestClient, test_session: dict):
+    def test_batch_duplicate_has_no_content_id(
+        self, client: TestClient, test_session: dict
+    ):
         """POST duplicate items have content_id=None."""
         session_id = test_session["session_id"]
 
@@ -350,7 +362,9 @@ class TestBatchAddErrors:
 
         assert response.status_code == 422
 
-    def test_batch_mixed_success_and_error(self, client: TestClient, test_session: dict):
+    def test_batch_mixed_success_and_error(
+        self, client: TestClient, test_session: dict
+    ):
         """POST with some URLs failing (retrieval error) returns all success but individual item shows error.
 
         Note: The batch_add_content function counts as "success" if the content record is created,
@@ -445,13 +459,14 @@ class TestBatchAddSourceUrl:
         content_id = data["items"][0]["content_id"]
 
         # Fetch the content to verify metadata
-        get_response = client.get(
-            f"/api/v1/sessions/{session_id}/content/{content_id}"
-        )
+        get_response = client.get(f"/api/v1/sessions/{session_id}/content/{content_id}")
 
         assert get_response.status_code == 200
         content_data = get_response.json()
-        assert content_data["metadata_json"].get("source_url") == "https://example.com/source-page"
+        assert (
+            content_data["metadata_json"].get("source_url")
+            == "https://example.com/source-page"
+        )
 
     def test_batch_without_source_url(self, client: TestClient, test_session: dict):
         """POST without source_url works normally."""

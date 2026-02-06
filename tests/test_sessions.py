@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import os
-import tempfile
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 import app.models  # noqa: F401  -- ensure models registered with Base.metadata
@@ -102,7 +101,9 @@ class TestCreateSession:
         # Workspace directory should have been created
         assert os.path.isdir(data["workspace_path"])
 
-    def test_create_session_creates_claude_md(self, client: TestClient, tmp_content_sandbox: str):
+    def test_create_session_creates_claude_md(
+        self, client: TestClient, tmp_content_sandbox: str
+    ):
         """Verify that CLAUDE.md is created in the sandbox directory with correct content."""
         response = client.post(
             "/api/v1/sessions/",
@@ -144,9 +145,7 @@ Use the content to provide accurate and relevant answers.
         assert response.status_code == 422
 
     def test_create_session_name_too_long(self, client: TestClient):
-        response = client.post(
-            "/api/v1/sessions/", json={"name": "x" * 256}
-        )
+        response = client.post("/api/v1/sessions/", json={"name": "x" * 256})
         assert response.status_code == 422
 
 
@@ -158,9 +157,7 @@ Use the content to provide accurate and relevant answers.
 class TestGetSession:
     def test_get_session(self, client: TestClient):
         # Create first
-        create_resp = client.post(
-            "/api/v1/sessions/", json={"name": "Fetched Session"}
-        )
+        create_resp = client.post("/api/v1/sessions/", json={"name": "Fetched Session"})
         session_id = create_resp.json()["session_id"]
 
         # Fetch
@@ -223,9 +220,7 @@ class TestListSessions:
 
 class TestDeleteSession:
     def test_delete_session(self, client: TestClient):
-        create_resp = client.post(
-            "/api/v1/sessions/", json={"name": "To Delete"}
-        )
+        create_resp = client.post("/api/v1/sessions/", json={"name": "To Delete"})
         session_id = create_resp.json()["session_id"]
         workspace = create_resp.json()["workspace_path"]
 
@@ -244,7 +239,9 @@ class TestDeleteSession:
         assert get_resp.status_code == 404
 
     def test_delete_session_not_found(self, client: TestClient):
-        response = client.delete("/api/v1/sessions/00000000-0000-4000-a000-000000000000")
+        response = client.delete(
+            "/api/v1/sessions/00000000-0000-4000-a000-000000000000"
+        )
         assert response.status_code == 404
 
 
@@ -257,9 +254,7 @@ class TestSessionIsolation:
     def test_multiple_sessions_coexist(self, client: TestClient):
         ids = []
         for i in range(3):
-            resp = client.post(
-                "/api/v1/sessions/", json={"name": f"Isolated {i}"}
-            )
+            resp = client.post("/api/v1/sessions/", json={"name": f"Isolated {i}"})
             ids.append(resp.json()["session_id"])
 
         # All three should be independently accessible

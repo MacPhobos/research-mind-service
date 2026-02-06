@@ -2,7 +2,6 @@
 
 import pytest
 from docx import Document
-from docx.shared import Pt
 
 from app.services.extractors.document.docx import DOCXExtractor
 
@@ -120,7 +119,9 @@ class TestDOCXExtractor:
         assert result.document_metadata.get("subject") == "Test Subject"
 
     @pytest.mark.asyncio
-    async def test_extract_docx_with_headings(self, docx_extractor, docx_with_formatting):
+    async def test_extract_docx_with_headings(
+        self, docx_extractor, docx_with_formatting
+    ):
         """Test that headings are preserved as markdown."""
         result = await docx_extractor.extract(docx_with_formatting)
 
@@ -129,7 +130,9 @@ class TestDOCXExtractor:
         assert "Sub Heading" in result.content
 
     @pytest.mark.asyncio
-    async def test_extract_docx_with_formatting(self, docx_extractor, docx_with_formatting):
+    async def test_extract_docx_with_formatting(
+        self, docx_extractor, docx_with_formatting
+    ):
         """Test that bold/italic formatting is preserved."""
         result = await docx_extractor.extract(docx_with_formatting)
 
@@ -154,7 +157,10 @@ class TestDOCXExtractor:
         with pytest.raises(ValueError) as exc_info:
             await docx_extractor.extract(empty_docx)
 
-        assert "empty" in str(exc_info.value).lower() or "no content" in str(exc_info.value).lower()
+        assert (
+            "empty" in str(exc_info.value).lower()
+            or "no content" in str(exc_info.value).lower()
+        )
 
     @pytest.mark.asyncio
     async def test_nonexistent_docx_raises_error(self, docx_extractor, tmp_path):

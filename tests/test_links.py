@@ -94,11 +94,11 @@ def _create_mock_result(
     )
 
     total_links = (
-        len(categories.main_content) +
-        len(categories.navigation) +
-        len(categories.sidebar) +
-        len(categories.footer) +
-        len(categories.other)
+        len(categories.main_content)
+        + len(categories.navigation)
+        + len(categories.sidebar)
+        + len(categories.footer)
+        + len(categories.other)
     )
 
     return ExtractedLinksResult(
@@ -171,11 +171,46 @@ class TestExtractLinksEndpoint:
     def test_extract_links_returns_all_categories(self, client: TestClient):
         """POST returns all five link categories."""
         mock_result = _create_mock_result(
-            main_content=[ExtractedLink(url="https://example.com/main", text="", is_external=False, source_element="main")],
-            navigation=[ExtractedLink(url="https://example.com/nav", text="", is_external=False, source_element="nav")],
-            sidebar=[ExtractedLink(url="https://example.com/side", text="", is_external=False, source_element="aside")],
-            footer=[ExtractedLink(url="https://example.com/foot", text="", is_external=False, source_element="footer")],
-            other=[ExtractedLink(url="https://example.com/other", text="", is_external=False, source_element="other")],
+            main_content=[
+                ExtractedLink(
+                    url="https://example.com/main",
+                    text="",
+                    is_external=False,
+                    source_element="main",
+                )
+            ],
+            navigation=[
+                ExtractedLink(
+                    url="https://example.com/nav",
+                    text="",
+                    is_external=False,
+                    source_element="nav",
+                )
+            ],
+            sidebar=[
+                ExtractedLink(
+                    url="https://example.com/side",
+                    text="",
+                    is_external=False,
+                    source_element="aside",
+                )
+            ],
+            footer=[
+                ExtractedLink(
+                    url="https://example.com/foot",
+                    text="",
+                    is_external=False,
+                    source_element="footer",
+                )
+            ],
+            other=[
+                ExtractedLink(
+                    url="https://example.com/other",
+                    text="",
+                    is_external=False,
+                    source_element="other",
+                )
+            ],
         )
 
         with patch.object(
@@ -214,7 +249,9 @@ class TestExtractLinksEndpoint:
             )
 
         assert response.status_code == 200
-        mock_extract.assert_called_once_with("https://example.com/", include_external=False)
+        mock_extract.assert_called_once_with(
+            "https://example.com/", include_external=False
+        )
 
     def test_extract_links_include_external_default_true(self, client: TestClient):
         """POST without include_external defaults to true."""
@@ -232,7 +269,9 @@ class TestExtractLinksEndpoint:
             )
 
         assert response.status_code == 200
-        mock_extract.assert_called_once_with("https://example.com/", include_external=True)
+        mock_extract.assert_called_once_with(
+            "https://example.com/", include_external=True
+        )
 
 
 # -----------------------------------------------------------------------------

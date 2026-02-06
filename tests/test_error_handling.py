@@ -6,15 +6,12 @@ structures for invalid inputs, missing resources, and subprocess failures.
 
 from __future__ import annotations
 
-import subprocess
 from unittest.mock import MagicMock, patch
 
-import pytest
 from fastapi.testclient import TestClient
 
 from app.core.workspace_indexer import (
     IndexingCommandError,
-    IndexingResult,
     IndexingTimeoutError,
 )
 
@@ -51,9 +48,7 @@ class TestNotFoundErrors:
         assert data["detail"]["error"]["code"] == "SESSION_NOT_FOUND"
 
     def test_index_status_nonexistent_returns_404(self, shared_client: TestClient):
-        resp = shared_client.get(
-            f"/api/v1/workspaces/{FAKE_UUID}/index/status"
-        )
+        resp = shared_client.get(f"/api/v1/workspaces/{FAKE_UUID}/index/status")
         assert resp.status_code == 404
         data = resp.json()
         assert data["detail"]["error"]["code"] == "SESSION_NOT_FOUND"
@@ -90,9 +85,7 @@ class TestValidationErrors:
 
 
 class TestSubprocessFailureErrors:
-    def test_index_subprocess_failure_returns_result(
-        self, shared_client: TestClient
-    ):
+    def test_index_subprocess_failure_returns_result(self, shared_client: TestClient):
         """When init subprocess fails, POST /index still returns 200 with success=false."""
         session = _create_session(shared_client)
         session_id = session["session_id"]
@@ -109,18 +102,14 @@ class TestSubprocessFailureErrors:
             "app.services.indexing_service.WorkspaceIndexer",
             return_value=mock_indexer,
         ):
-            resp = shared_client.post(
-                f"/api/v1/workspaces/{session_id}/index"
-            )
+            resp = shared_client.post(f"/api/v1/workspaces/{session_id}/index")
 
         assert resp.status_code == 200
         data = resp.json()
         assert data["success"] is False
         assert data["status"] == "failed"
 
-    def test_index_subprocess_timeout_returns_result(
-        self, shared_client: TestClient
-    ):
+    def test_index_subprocess_timeout_returns_result(self, shared_client: TestClient):
         """When subprocess times out, POST /index returns 500 with INDEXING_TIMEOUT."""
         session = _create_session(shared_client)
         session_id = session["session_id"]
@@ -134,9 +123,7 @@ class TestSubprocessFailureErrors:
             "app.services.indexing_service.WorkspaceIndexer",
             return_value=mock_indexer,
         ):
-            resp = shared_client.post(
-                f"/api/v1/workspaces/{session_id}/index"
-            )
+            resp = shared_client.post(f"/api/v1/workspaces/{session_id}/index")
 
         assert resp.status_code == 500
         data = resp.json()

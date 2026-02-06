@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import shutil
 from pathlib import Path
 from uuid import uuid4
@@ -14,7 +13,11 @@ from sqlalchemy.orm import Session as DbSession
 from app.core.config import settings
 from app.models.content_item import ContentItem, ContentStatus
 from app.models.session import Session
-from app.schemas.content import AddContentRequest, ContentItemResponse, ContentListResponse
+from app.schemas.content import (
+    AddContentRequest,
+    ContentItemResponse,
+    ContentListResponse,
+)
 from app.schemas.links import (
     BatchAddContentRequest,
     BatchContentItemResponse,
@@ -280,7 +283,9 @@ def batch_add_content(
         )
         .all()
     )
-    existing_urls: set[str] = {item.source_ref for item in existing_items if item.source_ref}
+    existing_urls: set[str] = {
+        item.source_ref for item in existing_items if item.source_ref
+    }
 
     # Track URLs seen in this batch for intra-batch deduplication
     seen_in_batch: set[str] = set()
@@ -324,7 +329,9 @@ def batch_add_content(
                 content_type="url",
                 title=url_item.title,
                 source=url_str,
-                metadata={"source_url": request.source_url} if request.source_url else None,
+                metadata={"source_url": request.source_url}
+                if request.source_url
+                else None,
             )
 
             # Call add_content to process the URL

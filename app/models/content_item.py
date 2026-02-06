@@ -49,9 +49,7 @@ class ContentItem(Base):
 
     __tablename__ = "content_items"
 
-    content_id: str = Column(
-        String(36), primary_key=True, default=lambda: str(uuid4())
-    )
+    content_id: str = Column(String(36), primary_key=True, default=lambda: str(uuid4()))
     session_id: str = Column(
         String(36),
         ForeignKey("sessions.session_id", ondelete="CASCADE"),

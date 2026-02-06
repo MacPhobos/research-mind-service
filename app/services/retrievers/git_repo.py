@@ -34,8 +34,8 @@ class GitRepoRetriever:
     ) -> RetrievalResult:
         clone_url = source
         repo_dir = target_dir / "repo"
-        resolved_title = (
-            title or clone_url.rstrip("/").rsplit("/", 1)[-1].removesuffix(".git")
+        resolved_title = title or clone_url.rstrip("/").rsplit("/", 1)[-1].removesuffix(
+            ".git"
         )
 
         cmd = [
@@ -88,9 +88,7 @@ class GitRepoRetriever:
             )
 
         # Calculate total size
-        total_bytes = sum(
-            f.stat().st_size for f in repo_dir.rglob("*") if f.is_file()
-        )
+        total_bytes = sum(f.stat().st_size for f in repo_dir.rglob("*") if f.is_file())
 
         # Write metadata
         meta = {
