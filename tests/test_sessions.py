@@ -118,13 +118,14 @@ class TestCreateSession:
         assert os.path.isfile(claude_md_path), "CLAUDE.md should exist in sandbox"
 
         # Verify the content matches the expected template
+        from app.services.session_service import SANDBOX_CLAUDE_MD_TEMPLATE
+
         with open(claude_md_path, "r") as f:
             content = f.read()
 
-        expected_content = """You are a research assistant responsible for answering questions based on the content stored in this sandbox directory.
-Use the content to provide accurate and relevant answers.
-"""
-        assert content == expected_content, "CLAUDE.md content should match template"
+        assert (
+            content == SANDBOX_CLAUDE_MD_TEMPLATE
+        ), "CLAUDE.md content should match template"
 
     def test_create_session_minimal(self, client: TestClient):
         response = client.post(
