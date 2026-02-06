@@ -469,6 +469,9 @@ def _prepare_claude_mpm_environment(workspace_path: str) -> dict[str, str]:
     # Disable telemetry for privacy
     env["DISABLE_TELEMETRY"] = "1"
 
+    # Skip background services for faster subprocess startup
+    env["CLAUDE_MPM_SKIP_BACKGROUND_SERVICES"] = "1"
+
     return env
 
 

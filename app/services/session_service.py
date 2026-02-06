@@ -13,7 +13,11 @@ from sqlalchemy.orm import Session as DbSession
 from app.core.config import settings
 from app.models.content_item import ContentItem
 from app.models.session import Session
-from app.schemas.session import CreateSessionRequest, SessionResponse, UpdateSessionRequest
+from app.schemas.session import (
+    CreateSessionRequest,
+    SessionResponse,
+    UpdateSessionRequest,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +37,24 @@ def create_sandbox_claude_md(sandbox_path: Path | str) -> None:
     claude_md_path = sandbox_path / "CLAUDE.md"
     claude_md_path.write_text(SANDBOX_CLAUDE_MD_TEMPLATE)
     logger.debug("Created CLAUDE.md in %s", sandbox_path)
+
+
+def create_sandbox_claude_mpm_config(sandbox_path: Path | str) -> None:
+    """Create optimized .claude-mpm/configuration.yaml for Q&A use case."""
+    sandbox_path = Path(sandbox_path)
+    config_dir = sandbox_path / ".claude-mpm"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    config_path = config_dir / "configuration.yaml"
+    config_path.write_text(
+        "agent_sync:\n"
+        "  enabled: false\n"
+        "\n"
+        "skills:\n"
+        "  auto_deploy: false\n"
+        "  agent_referenced: []\n"
+        "  user_defined: []\n"
+    )
+    logger.debug("Created claude-mpm configuration in %s", config_dir)
 
 
 def _build_response(session: Session, db: DbSession | None = None) -> SessionResponse:
@@ -88,6 +110,9 @@ def create_session(db: DbSession, request: CreateSessionRequest) -> SessionRespo
 
     # Create CLAUDE.md file in the sandbox directory
     create_sandbox_claude_md(session.workspace_path)
+
+    # Pre-create claude-mpm configuration for faster subprocess startup
+    create_sandbox_claude_mpm_config(session.workspace_path)
 
     logger.info("Created session %s at %s", session.session_id, session.workspace_path)
 
