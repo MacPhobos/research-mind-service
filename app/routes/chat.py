@@ -20,16 +20,11 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db, get_session_local
 from app.exceptions import (
-    ChatServiceError,
-    ChatStreamExpiredError,
     ClaudeApiKeyNotSetError,
     ClaudeMpmFailedError,
     ClaudeMpmNotAvailableError,
     ClaudeMpmTimeoutError,
     ExportGenerationError,
-    NoChatMessagesError,
-    NoPrecedingUserMessageError,
-    NotAssistantMessageError,
     SessionWorkspaceNotFoundError,
 )
 from app.models.chat_message import ChatRole, ChatStatus
@@ -38,7 +33,6 @@ from app.schemas.chat import (
     ChatMessageListResponse,
     ChatMessageResponse,
     ChatMessageWithStreamUrlResponse,
-    ChatStreamCompleteEvent,
     ChatStreamErrorEvent,
     SendChatMessageRequest,
 )
@@ -105,7 +99,9 @@ def send_chat_message(
     )
 
     # Build stream URL pointing to the assistant message
-    stream_url = f"/api/v1/sessions/{session_id}/chat/stream/{assistant_message.message_id}"
+    stream_url = (
+        f"/api/v1/sessions/{session_id}/chat/stream/{assistant_message.message_id}"
+    )
 
     # Update the user response with the correct stream URL
     # (pointing to assistant message, not user message)
@@ -143,6 +139,9 @@ async def stream_chat_response(
     - error: {"message_id": "...", "status": "error", "error": "..."}
     - heartbeat: {"timestamp": "ISO8601"} (every 15 seconds)
     """
+    endpoint_timer = chat_service.PhaseTimer(message_id)
+    endpoint_timer.mark("endpoint_entry")
+
     # Get session
     session = chat_service.get_session_by_id(db, session_id)
     if session is None:
@@ -215,6 +214,7 @@ async def stream_chat_response(
     user_content = user_message.content
     assistant_msg_id = message_id
     user_msg_id = user_message.message_id  # Extract user message ID for later use
+    endpoint_timer.mark("validation_complete")
 
     async def event_generator() -> AsyncGenerator[str, None]:
         """Generate SSE events from claude-mpm subprocess.
@@ -226,6 +226,7 @@ async def stream_chat_response(
         as they arrive, NOT from the 'complete' event. This ensures content
         is captured even if the client disconnects before complete event.
         """
+        endpoint_timer.mark("generator_started")
         final_content = ""
         final_token_count: int | None = None
         final_duration_ms: int | None = None
@@ -319,7 +320,9 @@ async def stream_chat_response(
                                 error_message = error_data.get("error", "Unknown error")
                                 break
                     except json.JSONDecodeError as e:
-                        logger.error(f"Failed to parse error event: {e}, event={event[:200]}")
+                        logger.error(
+                            f"Failed to parse error event: {e}, event={event[:200]}"
+                        )
                         error_occurred = True
                         error_message = "Unknown streaming error"
 
@@ -347,6 +350,7 @@ async def stream_chat_response(
             yield f"event: error\ndata: {error_event.model_dump_json()}\n\n"
 
         finally:
+            endpoint_timer.mark("streaming_complete")
             # Update message in database with final state
             # Use a new session since we're in an async context
             try:
@@ -403,6 +407,13 @@ async def stream_chat_response(
                                 "Marked user message %s as completed",
                                 user_msg_id,
                             )
+                endpoint_timer.mark("db_persisted")
+                endpoint_timing_summary = endpoint_timer.summary()
+                logger.info(
+                    "ENDPOINT TIMING SUMMARY [%s]: %s",
+                    assistant_msg_id[:8],
+                    json.dumps(endpoint_timing_summary),
+                )
             except Exception as db_error:
                 logger.exception(
                     "Failed to update message %s after streaming: %s",

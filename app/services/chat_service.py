@@ -50,6 +50,41 @@ from app.schemas.chat import (
 logger = logging.getLogger(__name__)
 
 
+class PhaseTimer:
+    """Tracks elapsed time for named phases within a request."""
+
+    def __init__(self, message_id: str):
+        self.message_id = message_id
+        self.start = time.monotonic()
+        self.phases: list[tuple[str, float]] = []
+        self._last = self.start
+
+    def mark(self, phase_name: str) -> float:
+        """Record a phase completion. Returns ms since last mark."""
+        now = time.monotonic()
+        elapsed_since_last = (now - self._last) * 1000
+        elapsed_total = (now - self.start) * 1000
+        self.phases.append((phase_name, elapsed_total))
+        self._last = now
+        logger.info(
+            "TIMING [%s] %s: %.0fms (total: %.0fms)",
+            self.message_id[:8],
+            phase_name,
+            elapsed_since_last,
+            elapsed_total,
+        )
+        return elapsed_since_last
+
+    def summary(self) -> dict:
+        """Return a summary dict suitable for structured logging."""
+        total = (time.monotonic() - self.start) * 1000
+        return {
+            "message_id": self.message_id,
+            "total_ms": round(total),
+            "phases": {name: round(ms) for name, ms in self.phases},
+        }
+
+
 def _build_response(message: ChatMessage) -> ChatMessageResponse:
     """Convert an ORM ChatMessage into a ChatMessageResponse."""
     return ChatMessageResponse(
@@ -184,11 +219,7 @@ def list_messages(
 
     Messages are ordered by created_at ascending (oldest first).
     """
-    total = (
-        db.query(ChatMessage)
-        .filter(ChatMessage.session_id == session_id)
-        .count()
-    )
+    total = db.query(ChatMessage).filter(ChatMessage.session_id == session_id).count()
     rows = (
         db.query(ChatMessage)
         .filter(ChatMessage.session_id == session_id)
@@ -303,7 +334,9 @@ def clear_chat_history(db: DbSession, session_id: str) -> int:
 # ---------------------------------------------------------------------------
 
 
-def classify_event(event: dict[str, Any]) -> tuple[ChatStreamEventType, ChatStreamStage]:
+def classify_event(
+    event: dict[str, Any],
+) -> tuple[ChatStreamEventType, ChatStreamStage]:
     """Classify a JSON event from claude-mpm into event type and stage.
 
     Stage 1 (EXPANDABLE): System initialization and hooks - NOT persisted
@@ -481,6 +514,8 @@ async def stream_claude_mpm_response(
         ClaudeMpmFailedError: Subprocess returned non-zero exit code.
     """
     start_time = time.time()
+    timer = PhaseTimer(assistant_message_id)
+    timer.mark("function_entry")
     stage2_content = ""  # Primary answer (persisted to database)
     metadata: ChatStreamResultMetadata | None = None
     json_mode = False  # Track when we enter JSON streaming mode
@@ -491,9 +526,11 @@ async def stream_claude_mpm_response(
     try:
         # Get claude-mpm path
         claude_mpm_path = _get_claude_mpm_path()
+        timer.mark("cli_path_resolved")
 
         # Prepare environment
         env = _prepare_claude_mpm_environment(workspace_path)
+        timer.mark("env_prepared")
 
         # Build command using claude-mpm exclusively
         # NOTE: --non-interactive is the oneshot mode flag
@@ -514,6 +551,7 @@ async def stream_claude_mpm_response(
             "stream-json",  # Enable JSON streaming output
             "--verbose",  # Include verbose system events
         ]
+        timer.mark("command_built")
 
         logger.info(
             "Spawning claude-mpm subprocess in %s for message %s (JSON streaming mode)",
@@ -545,13 +583,19 @@ async def stream_claude_mpm_response(
             cwd=workspace_path,  # Also set cwd for safety
             limit=settings.subprocess_stream_buffer_limit,
         )
+        timer.mark("subprocess_spawned")
 
         # Stream stdout line by line with two-stage parsing
+        first_byte_logged = False
+        first_stage2_logged = False
         try:
             while True:
                 # Check if we need to send a heartbeat
                 current_time = time.time()
-                if current_time - last_event_time > settings.sse_heartbeat_interval_seconds:
+                if (
+                    current_time - last_event_time
+                    > settings.sse_heartbeat_interval_seconds
+                ):
                     heartbeat_event = ChatStreamHeartbeatEvent(
                         timestamp=datetime.now(timezone.utc).isoformat()
                     )
@@ -578,6 +622,10 @@ async def stream_claude_mpm_response(
                 if not line_str:
                     continue
 
+                if not first_byte_logged:
+                    timer.mark("first_stdout_byte")
+                    first_byte_logged = True
+
                 # Debug: log every line received from claude-mpm
                 logger.debug(
                     "RAW LINE from claude-mpm for message %s: %s",
@@ -588,7 +636,11 @@ async def stream_claude_mpm_response(
                 # Detect JSON mode start (line begins with '{')
                 if not json_mode and line_str.startswith("{"):
                     json_mode = True
-                    logger.debug("Entered JSON streaming mode for message %s", assistant_message_id)
+                    timer.mark("json_mode_entered")
+                    logger.debug(
+                        "Entered JSON streaming mode for message %s",
+                        assistant_message_id,
+                    )
 
                 if json_mode:
                     # Parse JSON events
@@ -615,6 +667,9 @@ async def stream_claude_mpm_response(
 
                         else:
                             # Stage 2: Assistant/Result events (persisted)
+                            if not first_stage2_logged:
+                                timer.mark("first_stage2_event")
+                                first_stage2_logged = True
                             if event_type == ChatStreamEventType.ASSISTANT:
                                 # Debug: capture JSON structure before extraction
                                 logger.debug(
@@ -652,7 +707,9 @@ async def stream_claude_mpm_response(
                                     "RESULT event for message %s: keys=%s, result_preview=%s",
                                     assistant_message_id,
                                     list(event.keys()),
-                                    repr(event.get("result", ""))[:500] if event.get("result") else "<no result field>",
+                                    repr(event.get("result", ""))[:500]
+                                    if event.get("result")
+                                    else "<no result field>",
                                 )
                                 # Extract final answer and metadata
                                 result_content = event.get("result", "")
@@ -710,6 +767,7 @@ async def stream_claude_mpm_response(
 
             # Wait for process to complete
             await process.wait()
+            timer.mark("stream_complete")
 
             if process.returncode != 0:
                 stderr = await process.stderr.read()
@@ -770,6 +828,7 @@ async def stream_claude_mpm_response(
             duration_ms=final_duration_ms,
         )
         yield f"event: complete\ndata: {complete_event.model_dump_json()}\n\n"
+        timer.mark("response_finalized")
 
         logger.info(
             "Completed streaming for message %s (tokens=%s, duration=%sms, cost=$%s)",
@@ -779,6 +838,13 @@ async def stream_claude_mpm_response(
             metadata.cost_usd if metadata else None,
         )
 
+        timing_summary = timer.summary()
+        logger.info(
+            "TIMING SUMMARY [%s]: %s",
+            assistant_message_id[:8],
+            json.dumps(timing_summary),
+        )
+
     except (
         ClaudeMpmNotAvailableError,
         ClaudeApiKeyNotSetError,
@@ -786,7 +852,14 @@ async def stream_claude_mpm_response(
         ClaudeMpmTimeoutError,
         ClaudeMpmFailedError,
     ) as e:
+        timer.mark("error_occurred")
+        timing_summary = timer.summary()
         logger.exception("claude-mpm error for message %s: %s", assistant_message_id, e)
+        logger.error(
+            "TIMING SUMMARY (ERROR) [%s]: %s",
+            assistant_message_id[:8],
+            json.dumps(timing_summary),
+        )
         error_event = ChatStreamErrorEvent(
             message_id=assistant_message_id,
             error=str(e),
@@ -795,10 +868,17 @@ async def stream_claude_mpm_response(
         raise
 
     except Exception as e:
+        timer.mark("error_occurred")
+        timing_summary = timer.summary()
         logger.exception(
             "Unexpected error streaming Claude response for message %s: %s",
             assistant_message_id,
             e,
+        )
+        logger.error(
+            "TIMING SUMMARY (ERROR) [%s]: %s",
+            assistant_message_id[:8],
+            json.dumps(timing_summary),
         )
         error_event = ChatStreamErrorEvent(
             message_id=assistant_message_id,
