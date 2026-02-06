@@ -54,6 +54,3 @@ markers = [
 
 [tool.setuptools.packages]
 find = { where = ["."], include = ["app*"] }
-
-[tool.uvicorn]
-reload-excludes = [".venv/*", "__pycache__/*", "*.pyc"]

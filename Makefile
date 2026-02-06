@@ -11,7 +11,7 @@ install:
 
 run:
 	@echo "Starting service on port 15010..."
-	uv run uvicorn app.main:app --host 0.0.0.0 --port 15010 --reload
+	uv run uvicorn app.main:app --host 0.0.0.0 --port 15010 --reload --reload-dir app --reload-dir migrations
 
 run-prod:
 	@echo "Starting service (production)..."
