@@ -103,6 +103,18 @@ class ChatMessageListResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class SourceCitation(BaseModel):
+    """A file path citation extracted from the assistant's answer text.
+
+    Citations are backtick-wrapped paths matching UUID/filename or 8-hex/filename
+    patterns, linking answer text back to content items in the session sandbox.
+    """
+
+    file_path: str  # Full path: "uuid/filename" or "8hex/filename"
+    content_id: str | None = None  # UUID or 8-hex prefix extracted from path
+    title: str  # Filename portion of the path
+
+
 class ChatStreamResultMetadata(BaseModel):
     """Metadata extracted from claude-mpm result event.
 
@@ -117,6 +129,7 @@ class ChatStreamResultMetadata(BaseModel):
     cost_usd: float | None = None  # total_cost_usd from result event
     session_id: str | None = None  # Claude session ID for correlation
     num_turns: int | None = None  # Number of conversation turns
+    sources: list[SourceCitation] | None = None  # Extracted file path citations
 
 
 class ChatStreamStartEvent(BaseModel):

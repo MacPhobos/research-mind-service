@@ -14,6 +14,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import shutil
 import time
 from collections.abc import AsyncGenerator
@@ -45,6 +46,7 @@ from app.schemas.chat import (
     ChatStreamStage,
     ChatStreamStartEvent,
     SendChatMessageRequest,
+    SourceCitation,
 )
 
 logger = logging.getLogger(__name__)
@@ -395,6 +397,43 @@ def extract_metadata(result_event: dict[str, Any]) -> ChatStreamResultMetadata:
         input_tokens=usage.get("input_tokens"),
         cache_read_tokens=usage.get("cache_read_input_tokens"),
     )
+
+
+def extract_citations(content: str) -> list[SourceCitation]:
+    """Extract file path citations from Claude's answer text.
+
+    Scans the assistant's response for backtick-wrapped file paths matching
+    UUID/filename or 8-hex-prefix/filename patterns. These correspond to
+    content items in the session sandbox.
+
+    Args:
+        content: The assistant's answer text (stage 2 content).
+
+    Returns:
+        List of SourceCitation objects, deduplicated by file_path,
+        preserving first-occurrence order.
+    """
+    citations: list[SourceCitation] = []
+    seen: set[str] = set()
+
+    uuid_short = r"[0-9a-f]{8}"
+    uuid_full = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+    path_pattern = rf"`((?:{uuid_full}|{uuid_short})/[^`]+)`"
+
+    for match in re.finditer(path_pattern, content):
+        file_path = match.group(1)
+        if file_path not in seen:
+            seen.add(file_path)
+            parts = file_path.split("/", 1)
+            citations.append(
+                SourceCitation(
+                    file_path=file_path,
+                    content_id=parts[0] if len(parts) > 1 else None,
+                    title=parts[1] if len(parts) > 1 else file_path,
+                )
+            )
+
+    return citations
 
 
 def extract_assistant_content(assistant_event: dict[str, Any]) -> str:
@@ -820,6 +859,19 @@ async def stream_claude_mpm_response(
             len(stage2_content),
             repr(stage2_content[:100]) if stage2_content else "<empty>",
         )
+
+        # Extract source citations from the answer text
+        citations = extract_citations(stage2_content) if stage2_content else []
+        if citations:
+            logger.info(
+                "Extracted %d source citations from message %s",
+                len(citations),
+                assistant_message_id,
+            )
+            if metadata is not None:
+                metadata.sources = citations
+            else:
+                metadata = ChatStreamResultMetadata(sources=citations)
 
         # Yield complete event with Stage 2 content only (this is what gets persisted)
         complete_event = ChatStreamCompleteEvent(

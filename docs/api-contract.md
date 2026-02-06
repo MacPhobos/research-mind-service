@@ -1,7 +1,7 @@
 # research-mind API Contract
 
-> **Version**: 1.8.0
-> **Last Updated**: 2026-02-05
+> **Version**: 1.9.0
+> **Last Updated**: 2026-02-06
 > **Status**: FROZEN - Changes require version bump and UI sync
 
 This document defines the API contract between `research-mind-service` (FastAPI backend) and `research-mind-ui` (SvelteKit frontend).
@@ -1570,6 +1570,12 @@ interface ChatStreamCompleteEvent {
   duration_ms?: number;               // Legacy field
 }
 
+interface SourceCitation {
+  file_path: string;           // Full path: "uuid/filename" or "8hex/filename"
+  content_id?: string;         // UUID or 8-hex prefix extracted from path
+  title: string;               // Filename portion of the path
+}
+
 interface ChatStreamResultMetadata {
   token_count?: number;        // output_tokens
   input_tokens?: number;       // input_tokens
@@ -1579,6 +1585,7 @@ interface ChatStreamResultMetadata {
   cost_usd?: number;           // total_cost_usd
   session_id?: string;         // Claude session ID
   num_turns?: number;          // Number of turns
+  sources?: SourceCitation[];  // Extracted file path citations from answer
 }
 ```
 
@@ -1879,6 +1886,7 @@ All endpoints are currently open. Authentication will be added in a future versi
 
 | Version | Date       | Changes                                    |
 | ------- | ---------- | ------------------------------------------ |
+| 1.9.0   | 2026-02-06 | Added source citations to chat streaming metadata. New `SourceCitation` schema with `file_path`, `content_id`, and `title` fields. Added `sources` array field to `ChatStreamResultMetadata` for linking answer text to content items via extracted file path citations (backtick-wrapped UUID/filename patterns). |
 | 1.8.0   | 2026-02-05 | Added `document` content type for extracting text from uploaded documents. Supported formats: PDF (.pdf), DOCX (.docx), Markdown (.md), Plain Text (.txt). PDF extraction with structure detection (headers, paragraphs, lists). DOCX to markdown conversion. Document metadata extraction (title, author, page count). Added error codes: UNSUPPORTED_DOCUMENT_FORMAT, FILE_TOO_LARGE, DOCUMENT_EXTRACTION_FAILED. |
 | 1.0.0   | 2026-01-31 | Initial contract: Sessions, indexing (planned), search, analysis |
 | 1.1.0   | 2026-02-01 | Updated to match implemented endpoints: workspace indexing (subprocess-based), audit logs, index status. Marked search/analysis as planned. |
