@@ -21,6 +21,17 @@ from app.schemas.session import (
 
 logger = logging.getLogger(__name__)
 
+# Skills to deploy into Q&A sandbox directories for better answer quality.
+# Maps the claude-mpm skill name to the directory name under .claude/skills/.
+MINIMAL_QA_SKILLS: tuple[tuple[str, str], ...] = (
+    ("json-data-handling", "universal-data-json-data-handling"),
+    ("mcp", "toolchains-ai-protocols-mcp"),
+    ("writing-plans", "universal-collaboration-writing-plans"),
+)
+
+# Monorepo root (parent of the service directory)
+_MONOREPO_ROOT = Path(__file__).resolve().parents[3]
+
 # Template content for CLAUDE.md in session sandbox directories
 SANDBOX_CLAUDE_MD_TEMPLATE = """# Research Assistant
 
@@ -83,10 +94,51 @@ def create_sandbox_claude_mpm_config(sandbox_path: Path | str) -> None:
         "\n"
         "skills:\n"
         "  auto_deploy: false\n"
-        "  agent_referenced: []\n"
+        "  agent_referenced:\n"
+        "    - json-data-handling\n"
+        "    - mcp\n"
+        "    - writing-plans\n"
         "  user_defined: []\n"
     )
     logger.debug("Created claude-mpm configuration in %s", config_dir)
+
+
+def deploy_minimal_sandbox_skills(sandbox_path: Path | str) -> None:
+    """Copy a curated set of skill directories into the sandbox.
+
+    Each skill directory from the monorepo root ``.claude/skills/`` is copied
+    into ``<sandbox>/.claude/skills/``.  Files named ``.etag_cache.json`` are
+    excluded because they contain ephemeral cache data irrelevant to the
+    sandbox.
+
+    Missing source skill directories are logged as warnings and skipped so
+    that session creation never fails due to a missing skill.
+
+    Args:
+        sandbox_path: Path to the session sandbox directory.
+    """
+    sandbox_path = Path(sandbox_path)
+    dest_skills_dir = sandbox_path / ".claude" / "skills"
+    dest_skills_dir.mkdir(parents=True, exist_ok=True)
+
+    source_skills_root = _MONOREPO_ROOT / ".claude" / "skills"
+
+    def _ignore_etag_cache(directory: str, contents: list[str]) -> set[str]:
+        """shutil.copytree ignore callback -- skip .etag_cache.json."""
+        return {name for name in contents if name == ".etag_cache.json"}
+
+    for _skill_name, dir_name in MINIMAL_QA_SKILLS:
+        src = source_skills_root / dir_name
+        dst = dest_skills_dir / dir_name
+        if not src.is_dir():
+            logger.warning("Skill directory not found, skipping: %s", src)
+            continue
+        shutil.copytree(src, dst, ignore=_ignore_etag_cache, dirs_exist_ok=True)
+        logger.debug("Deployed skill %s -> %s", dir_name, dst)
+
+    logger.debug(
+        "Deployed %d sandbox skills to %s", len(MINIMAL_QA_SKILLS), dest_skills_dir
+    )
 
 
 def _build_response(session: Session, db: DbSession | None = None) -> SessionResponse:
@@ -145,6 +197,9 @@ def create_session(db: DbSession, request: CreateSessionRequest) -> SessionRespo
 
     # Pre-create claude-mpm configuration for faster subprocess startup
     create_sandbox_claude_mpm_config(session.workspace_path)
+
+    # Deploy minimal skill files so the Q&A subprocess has context
+    deploy_minimal_sandbox_skills(session.workspace_path)
 
     logger.info("Created session %s at %s", session.session_id, session.workspace_path)
 

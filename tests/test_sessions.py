@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -295,3 +297,247 @@ class TestIsIndexed:
         get_resp = client.get(f"/api/v1/sessions/{session_id}")
         assert get_resp.status_code == 200
         assert get_resp.json()["is_indexed"] is True
+
+
+# ------------------------------------------------------------------
+# Fixtures for sandbox skill deployment tests
+# ------------------------------------------------------------------
+
+
+@pytest.fixture()
+def fake_monorepo_root(tmp_path: Path) -> Path:
+    """Create a fake monorepo root with skill directories.
+
+    Mirrors the structure of the real monorepo .claude/skills/ directory
+    with the three skills referenced by MINIMAL_QA_SKILLS.
+    """
+    skills_root = tmp_path / "fake_monorepo" / ".claude" / "skills"
+
+    # universal-data-json-data-handling: has skill.md, metadata.json, .etag_cache.json
+    json_skill = skills_root / "universal-data-json-data-handling"
+    json_skill.mkdir(parents=True)
+    (json_skill / "skill.md").write_text("# JSON Data Handling\nTest content.")
+    (json_skill / "metadata.json").write_text('{"name": "json-data-handling"}')
+    (json_skill / ".etag_cache.json").write_text('{"etag": "abc123"}')
+
+    # toolchains-ai-protocols-mcp: has skill.md only
+    mcp_skill = skills_root / "toolchains-ai-protocols-mcp"
+    mcp_skill.mkdir(parents=True)
+    (mcp_skill / "skill.md").write_text("# MCP Protocol\nTest content.")
+
+    # universal-collaboration-writing-plans: has skill.md, metadata.json,
+    # .etag_cache.json, and a references/ subdirectory
+    plans_skill = skills_root / "universal-collaboration-writing-plans"
+    plans_skill.mkdir(parents=True)
+    (plans_skill / "skill.md").write_text("# Writing Plans\nTest content.")
+    (plans_skill / "metadata.json").write_text('{"name": "writing-plans"}')
+    (plans_skill / ".etag_cache.json").write_text('{"etag": "def456"}')
+    refs = plans_skill / "references"
+    refs.mkdir()
+    (refs / "example.md").write_text("# Example Reference")
+    (refs / ".etag_cache.json").write_text('{"etag": "nested789"}')
+
+    return tmp_path / "fake_monorepo"
+
+
+# ------------------------------------------------------------------
+# claude-mpm configuration.yaml content tests
+# ------------------------------------------------------------------
+
+
+class TestClaudeMpmConfig:
+    def test_config_lists_three_skills(self, tmp_path: Path):
+        """Verify configuration.yaml has the 3 skill names in agent_referenced."""
+        from app.services.session_service import create_sandbox_claude_mpm_config
+
+        sandbox = tmp_path / "sandbox"
+        sandbox.mkdir()
+        create_sandbox_claude_mpm_config(sandbox)
+
+        config_path = sandbox / ".claude-mpm" / "configuration.yaml"
+        assert config_path.is_file()
+
+        content = config_path.read_text()
+        assert "agent_referenced:" in content
+        assert "- json-data-handling" in content
+        assert "- mcp" in content
+        assert "- writing-plans" in content
+
+    def test_config_disables_auto_deploy(self, tmp_path: Path):
+        """Verify auto_deploy is false and agent_sync is disabled."""
+        from app.services.session_service import create_sandbox_claude_mpm_config
+
+        sandbox = tmp_path / "sandbox"
+        sandbox.mkdir()
+        create_sandbox_claude_mpm_config(sandbox)
+
+        content = (sandbox / ".claude-mpm" / "configuration.yaml").read_text()
+        assert "auto_deploy: false" in content
+        assert "enabled: false" in content
+
+
+# ------------------------------------------------------------------
+# deploy_minimal_sandbox_skills unit tests
+# ------------------------------------------------------------------
+
+
+class TestDeployMinimalSandboxSkills:
+    def test_copies_all_three_skill_dirs(
+        self, tmp_path: Path, fake_monorepo_root: Path
+    ):
+        """All three skill directories should be copied into the sandbox."""
+        from app.services.session_service import deploy_minimal_sandbox_skills
+
+        sandbox = tmp_path / "sandbox"
+        sandbox.mkdir()
+
+        with patch("app.services.session_service._MONOREPO_ROOT", fake_monorepo_root):
+            deploy_minimal_sandbox_skills(sandbox)
+
+        skills_dir = sandbox / ".claude" / "skills"
+        assert (skills_dir / "universal-data-json-data-handling").is_dir()
+        assert (skills_dir / "toolchains-ai-protocols-mcp").is_dir()
+        assert (skills_dir / "universal-collaboration-writing-plans").is_dir()
+
+    def test_skill_files_are_copied(self, tmp_path: Path, fake_monorepo_root: Path):
+        """Verify actual skill files (skill.md, metadata.json) are present."""
+        from app.services.session_service import deploy_minimal_sandbox_skills
+
+        sandbox = tmp_path / "sandbox"
+        sandbox.mkdir()
+
+        with patch("app.services.session_service._MONOREPO_ROOT", fake_monorepo_root):
+            deploy_minimal_sandbox_skills(sandbox)
+
+        skills_dir = sandbox / ".claude" / "skills"
+
+        # JSON skill has skill.md and metadata.json
+        assert (skills_dir / "universal-data-json-data-handling" / "skill.md").is_file()
+        assert (
+            skills_dir / "universal-data-json-data-handling" / "metadata.json"
+        ).is_file()
+
+        # MCP skill has skill.md only
+        assert (skills_dir / "toolchains-ai-protocols-mcp" / "skill.md").is_file()
+
+        # Writing plans skill has skill.md, metadata.json, and references/
+        plans_dir = skills_dir / "universal-collaboration-writing-plans"
+        assert (plans_dir / "skill.md").is_file()
+        assert (plans_dir / "metadata.json").is_file()
+        assert (plans_dir / "references" / "example.md").is_file()
+
+    def test_etag_cache_json_excluded(self, tmp_path: Path, fake_monorepo_root: Path):
+        """Files named .etag_cache.json should NOT be copied."""
+        from app.services.session_service import deploy_minimal_sandbox_skills
+
+        sandbox = tmp_path / "sandbox"
+        sandbox.mkdir()
+
+        with patch("app.services.session_service._MONOREPO_ROOT", fake_monorepo_root):
+            deploy_minimal_sandbox_skills(sandbox)
+
+        skills_dir = sandbox / ".claude" / "skills"
+
+        # .etag_cache.json should be excluded at top level of each skill
+        assert not (
+            skills_dir / "universal-data-json-data-handling" / ".etag_cache.json"
+        ).exists()
+        assert not (
+            skills_dir / "universal-collaboration-writing-plans" / ".etag_cache.json"
+        ).exists()
+
+        # .etag_cache.json should also be excluded in subdirectories
+        assert not (
+            skills_dir
+            / "universal-collaboration-writing-plans"
+            / "references"
+            / ".etag_cache.json"
+        ).exists()
+
+    def test_missing_skill_skipped_gracefully(self, tmp_path: Path):
+        """If a skill directory is missing, it should be skipped with a warning."""
+        from app.services.session_service import deploy_minimal_sandbox_skills
+
+        # Use an empty fake monorepo root (no skill dirs at all)
+        empty_root = tmp_path / "empty_monorepo"
+        empty_root.mkdir()
+
+        sandbox = tmp_path / "sandbox"
+        sandbox.mkdir()
+
+        with patch("app.services.session_service._MONOREPO_ROOT", empty_root):
+            # Should not raise -- missing skills are logged and skipped
+            deploy_minimal_sandbox_skills(sandbox)
+
+        # The .claude/skills/ dir is created but should be empty
+        skills_dir = sandbox / ".claude" / "skills"
+        assert skills_dir.is_dir()
+        assert list(skills_dir.iterdir()) == []
+
+    def test_partial_skills_available(self, tmp_path: Path, fake_monorepo_root: Path):
+        """If only some skills exist, available ones are copied and missing ones skipped."""
+        from app.services.session_service import deploy_minimal_sandbox_skills
+
+        # Remove one skill directory from the fake monorepo
+        import shutil
+
+        shutil.rmtree(
+            fake_monorepo_root / ".claude" / "skills" / "toolchains-ai-protocols-mcp"
+        )
+
+        sandbox = tmp_path / "sandbox"
+        sandbox.mkdir()
+
+        with patch("app.services.session_service._MONOREPO_ROOT", fake_monorepo_root):
+            deploy_minimal_sandbox_skills(sandbox)
+
+        skills_dir = sandbox / ".claude" / "skills"
+        # Two skills should exist, one should be missing
+        assert (skills_dir / "universal-data-json-data-handling").is_dir()
+        assert not (skills_dir / "toolchains-ai-protocols-mcp").exists()
+        assert (skills_dir / "universal-collaboration-writing-plans").is_dir()
+
+
+# ------------------------------------------------------------------
+# Integration: create_session deploys skills
+# ------------------------------------------------------------------
+
+
+class TestCreateSessionDeploysSkills:
+    def test_create_session_deploys_skills(
+        self, client: TestClient, fake_monorepo_root: Path
+    ):
+        """Creating a session should deploy skill directories into the workspace."""
+        with patch("app.services.session_service._MONOREPO_ROOT", fake_monorepo_root):
+            response = client.post(
+                "/api/v1/sessions/",
+                json={"name": "Skill Deploy Session"},
+            )
+        assert response.status_code == 201
+        data = response.json()
+        workspace = Path(data["workspace_path"])
+
+        skills_dir = workspace / ".claude" / "skills"
+        assert skills_dir.is_dir()
+        assert (skills_dir / "universal-data-json-data-handling").is_dir()
+        assert (skills_dir / "toolchains-ai-protocols-mcp").is_dir()
+        assert (skills_dir / "universal-collaboration-writing-plans").is_dir()
+
+    def test_create_session_excludes_etag_cache(
+        self, client: TestClient, fake_monorepo_root: Path
+    ):
+        """Creating a session should not copy .etag_cache.json files."""
+        with patch("app.services.session_service._MONOREPO_ROOT", fake_monorepo_root):
+            response = client.post(
+                "/api/v1/sessions/",
+                json={"name": "No Etag Session"},
+            )
+        assert response.status_code == 201
+        workspace = Path(response.json()["workspace_path"])
+
+        skills_dir = workspace / ".claude" / "skills"
+        # Walk all files and ensure no .etag_cache.json exists
+        etag_files = list(skills_dir.rglob(".etag_cache.json"))
+        assert (
+            etag_files == []
+        ), f"Found unexpected .etag_cache.json files: {etag_files}"
