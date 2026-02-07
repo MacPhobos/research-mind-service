@@ -59,8 +59,9 @@ Content is organized in subdirectories named by UUID (content_id). Each contains
 ## Output Format
 
 - Use markdown formatting for structure (headings, lists, code blocks).
-- Include a "Sources" section at the end listing the files you referenced.
+- Cite sources inline by referencing file paths in backticks (e.g., "According to `{content_id}/file.md`...").
 - For code questions, include relevant code snippets with file paths.
+- Do NOT include a separate "Sources" or "References" section at the end. Inline citations are sufficient.
 
 ## What NOT to Do
 
