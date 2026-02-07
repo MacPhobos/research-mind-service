@@ -108,11 +108,17 @@ class SourceCitation(BaseModel):
 
     Citations are backtick-wrapped paths matching UUID/filename or 8-hex/filename
     patterns, linking answer text back to content items in the session sandbox.
+
+    After enrichment via DB lookup, source_url, content_title, and content_type
+    are populated from the matching ContentItem record.
     """
 
     file_path: str  # Full path: "uuid/filename" or "8hex/filename"
     content_id: str | None = None  # UUID or 8-hex prefix extracted from path
     title: str  # Filename portion of the path
+    source_url: str | None = None  # Original source URL from ContentItem.source_ref
+    content_title: str | None = None  # Human-readable title from ContentItem.title
+    content_type: str | None = None  # Content type from ContentItem.content_type
 
 
 class ChatStreamResultMetadata(BaseModel):

@@ -33,6 +33,7 @@ from app.exceptions import (
     SessionWorkspaceNotFoundError,
 )
 from app.models.chat_message import ChatMessage, ChatRole, ChatStatus
+from app.models.content_item import ContentItem
 from app.models.session import Session
 from app.schemas.chat import (
     ChatMessageResponse,
@@ -431,6 +432,80 @@ def extract_citations(content: str) -> list[SourceCitation]:
                     content_id=parts[0] if len(parts) > 1 else None,
                     title=parts[1] if len(parts) > 1 else file_path,
                 )
+            )
+
+    return citations
+
+
+def enrich_citations(
+    citations: list[SourceCitation],
+    session_id: str,
+    db: DbSession,
+) -> list[SourceCitation]:
+    """Enrich citations with metadata from the content_items database table.
+
+    For each citation that has a content_id, look up the matching ContentItem
+    record and populate source_url, content_title, and content_type fields.
+
+    Matching strategy:
+    1. Exact match on ContentItem.content_id (full UUID)
+    2. Fallback: 8-hex prefix LIKE match within the same session
+
+    Args:
+        citations: List of SourceCitation objects from extract_citations().
+        session_id: The session UUID to scope the DB lookup.
+        db: SQLAlchemy database session (sync).
+
+    Returns:
+        The same list of SourceCitation objects, enriched in-place with DB metadata.
+    """
+    if not citations:
+        return citations
+
+    for citation in citations:
+        if not citation.content_id:
+            continue
+
+        # Try exact match first (full UUID)
+        item = (
+            db.query(ContentItem)
+            .filter(
+                ContentItem.session_id == session_id,
+                ContentItem.content_id == citation.content_id,
+            )
+            .first()
+        )
+
+        # Fallback: 8-hex prefix LIKE match
+        if item is None and len(citation.content_id) == 8:
+            item = (
+                db.query(ContentItem)
+                .filter(
+                    ContentItem.session_id == session_id,
+                    ContentItem.content_id.like(f"{citation.content_id}%"),
+                )
+                .first()
+            )
+
+        if item is not None:
+            citation.source_url = item.source_ref
+            citation.content_title = item.title
+            citation.content_type = item.content_type
+            # Also resolve the full content_id if we matched by prefix
+            if len(citation.content_id) == 8 and item.content_id:
+                citation.content_id = item.content_id
+            logger.debug(
+                "Enriched citation %s: title=%s, type=%s, url=%s",
+                citation.content_id,
+                item.title,
+                item.content_type,
+                item.source_ref,
+            )
+        else:
+            logger.debug(
+                "No ContentItem found for citation content_id=%s in session %s",
+                citation.content_id,
+                session_id,
             )
 
     return citations

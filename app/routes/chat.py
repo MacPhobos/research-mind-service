@@ -284,6 +284,7 @@ async def stream_chat_response(
 
                 # Parse complete event for metadata only (token_count, duration_ms)
                 # Content should already be captured from assistant/result events
+                # Also enrich citations with DB metadata before yielding
                 elif event.startswith("event: complete\n"):
                     try:
                         for line in event.split("\n"):
@@ -301,6 +302,45 @@ async def stream_chat_response(
                                     len(final_content),
                                     final_token_count,
                                 )
+
+                                # Enrich citations with DB metadata
+                                meta = complete_data.get("metadata")
+                                if meta and meta.get("sources"):
+                                    try:
+                                        from app.schemas.chat import SourceCitation
+
+                                        raw_sources = meta["sources"]
+                                        citations = [
+                                            SourceCitation(**s) for s in raw_sources
+                                        ]
+                                        EnrichSessionLocal = get_session_local()
+                                        with EnrichSessionLocal() as enrich_db:
+                                            chat_service.enrich_citations(
+                                                citations, session_id, enrich_db
+                                            )
+                                        # Rebuild metadata with enriched citations
+                                        meta["sources"] = [
+                                            c.model_dump(mode="json") for c in citations
+                                        ]
+                                        complete_data["metadata"] = meta
+                                        # Rebuild the SSE event with enriched data
+                                        event = (
+                                            f"event: complete\n"
+                                            f"data: {json.dumps(complete_data)}\n\n"
+                                        )
+                                        logger.info(
+                                            "Enriched %d citations for message %s",
+                                            len(citations),
+                                            assistant_msg_id,
+                                        )
+                                    except Exception as enrich_err:
+                                        logger.warning(
+                                            "Citation enrichment failed for message %s: %s",
+                                            assistant_msg_id,
+                                            enrich_err,
+                                        )
+                                        # Continue with unenriched event
+
                                 break
                     except json.JSONDecodeError as e:
                         logger.error(

@@ -1,7 +1,7 @@
 # research-mind API Contract
 
-> **Version**: 1.9.0
-> **Last Updated**: 2026-02-06
+> **Version**: 1.10.0
+> **Last Updated**: 2026-02-07
 > **Status**: FROZEN - Changes require version bump and UI sync
 
 This document defines the API contract between `research-mind-service` (FastAPI backend) and `research-mind-ui` (SvelteKit frontend).
@@ -1574,6 +1574,9 @@ interface SourceCitation {
   file_path: string;           // Full path: "uuid/filename" or "8hex/filename"
   content_id?: string;         // UUID or 8-hex prefix extracted from path
   title: string;               // Filename portion of the path
+  source_url?: string;         // Original source URL from ContentItem.source_ref
+  content_title?: string;      // Human-readable title from ContentItem.title
+  content_type?: string;       // Content type: "text" | "url" | "document" | "git_repo" | etc.
 }
 
 interface ChatStreamResultMetadata {
@@ -1886,6 +1889,7 @@ All endpoints are currently open. Authentication will be added in a future versi
 
 | Version | Date       | Changes                                    |
 | ------- | ---------- | ------------------------------------------ |
+| 1.10.0  | 2026-02-07 | Citation enrichment via DB lookup. Added `source_url`, `content_title`, and `content_type` optional fields to `SourceCitation` schema. Citations are now enriched with metadata from the `content_items` table using exact content_id match with 8-hex prefix LIKE fallback. Enables human-readable source titles and clickable URLs in the UI. |
 | 1.9.0   | 2026-02-06 | Added source citations to chat streaming metadata. New `SourceCitation` schema with `file_path`, `content_id`, and `title` fields. Added `sources` array field to `ChatStreamResultMetadata` for linking answer text to content items via extracted file path citations (backtick-wrapped UUID/filename patterns). |
 | 1.8.0   | 2026-02-05 | Added `document` content type for extracting text from uploaded documents. Supported formats: PDF (.pdf), DOCX (.docx), Markdown (.md), Plain Text (.txt). PDF extraction with structure detection (headers, paragraphs, lists). DOCX to markdown conversion. Document metadata extraction (title, author, page count). Added error codes: UNSUPPORTED_DOCUMENT_FORMAT, FILE_TOO_LARGE, DOCUMENT_EXTRACTION_FAILED. |
 | 1.0.0   | 2026-01-31 | Initial contract: Sessions, indexing (planned), search, analysis |
