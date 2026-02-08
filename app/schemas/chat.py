@@ -40,6 +40,7 @@ class ChatStreamEventType(str, Enum):
     STREAM_TOKEN = "stream_token"  # Token-by-token if available (Stage 1)
     ASSISTANT = "assistant"  # Complete assistant message (Stage 2)
     RESULT = "result"  # Final result with metadata (Stage 2)
+    PROGRESS = "progress"  # Structured progress update (Stage 1)
     ERROR = "error"
     HEARTBEAT = "heartbeat"
 
@@ -59,6 +60,40 @@ class ChatStreamStage(int, Enum):
 
     EXPANDABLE = 1  # Stage 1: Process output (not persisted)
     PRIMARY = 2  # Stage 2: Final answer (persisted)
+
+
+class ProgressPhase(str, Enum):
+    """Progress phases for Q&A streaming.
+
+    Four phases that map to reliably detectable signals during the
+    claude-mpm subprocess lifecycle:
+
+    - STARTING: Subprocess has been spawned (~1.9s)
+    - INITIALIZING: First init_text event parsed (skill sync, 3-8s)
+    - THINKING: Silence gap entered (no stdout for 5s, 18-261s gap)
+    - COMPLETE: First post-gap burst event arrived (<1s)
+    """
+
+    STARTING = "starting"
+    INITIALIZING = "initializing"
+    THINKING = "thinking"
+    COMPLETE = "complete"
+
+
+class ChatStreamProgressEvent(BaseModel):
+    """Structured progress update during Q&A streaming.
+
+    Emitted as Stage 1 (EXPANDABLE) events to provide user feedback
+    during the 18-261 second silence gap between query submission
+    and answer delivery from the claude-mpm subprocess.
+
+    The ``thinking`` phase includes periodic elapsed-time updates
+    every 10 seconds (e.g. "Thinking... (25s)").
+    """
+
+    phase: ProgressPhase
+    message: str  # Human-readable status description
+    elapsed_ms: int  # Milliseconds since stream started
 
 
 class SendChatMessageRequest(BaseModel):

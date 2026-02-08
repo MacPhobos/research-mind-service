@@ -1,6 +1,6 @@
 # research-mind API Contract
 
-> **Version**: 1.10.0
+> **Version**: 1.11.0
 > **Last Updated**: 2026-02-07
 > **Status**: FROZEN - Changes require version bump and UI sync
 
@@ -1531,6 +1531,7 @@ The streaming response is divided into two stages:
 |------------|-------|-------------|
 | `start` | - | Session started, message_id returned |
 | `chunk` | 1 or 2 | Streaming content with stage classification |
+| `chunk` (progress) | 1 | Structured progress update during processing |
 | `complete` | - | Streaming finished, final content + metadata |
 | `error` | - | Error occurred during processing |
 | `heartbeat` | - | Keep-alive ping (every 15 seconds) |
@@ -1553,10 +1554,32 @@ enum ChatStreamEventType {
   STREAM_TOKEN = "stream_token", // Token streaming if available (Stage 1)
   ASSISTANT = "assistant",       // Complete assistant message (Stage 2)
   RESULT = "result",             // Final result with metadata (Stage 2)
+  PROGRESS = "progress",         // Structured progress update (Stage 1)
   ERROR = "error",
   HEARTBEAT = "heartbeat",
 }
 ```
+
+**Progress Event Schema**
+
+Progress events are emitted as `event: chunk` with `event_type: "progress"` and `stage: 1` (EXPANDABLE). The `content` field contains a JSON-encoded `ChatStreamProgressEvent`:
+
+```typescript
+interface ChatStreamProgressEvent {
+  phase: "starting" | "initializing" | "thinking" | "complete";
+  message: string;           // Human-readable status description
+  elapsed_ms: number;        // Milliseconds since stream started
+}
+```
+
+| Phase | Detection Signal | Typical Duration | Message Examples |
+|-------|-----------------|-----------------|------------------|
+| `starting` | Subprocess spawned | ~1.9s | "Starting Claude Code..." |
+| `initializing` | First init_text event (skill sync) | 3-8s | "Initializing... syncing skills (25%)" |
+| `thinking` | 5s silence gap (no stdout) | 18-261s | "Thinking... (25s)", "Thinking... (35s)" |
+| `complete` | First post-gap burst event | <1s | "Generating answer..." |
+
+During the `thinking` phase, periodic progress events are emitted every 10 seconds with updated elapsed time. Progress events are Stage 1 (EXPANDABLE) and are NOT persisted to the database.
 
 **Complete Event Schema**
 
@@ -1599,7 +1622,22 @@ event: start
 data: {"message_id":"abc123","status":"streaming"}
 
 event: chunk
+data: {"content":"{\"phase\":\"starting\",\"message\":\"Starting Claude Code...\",\"elapsed_ms\":487}","event_type":"progress","stage":1,"raw_json":null}
+
+event: chunk
 data: {"content":"Syncing agents...","event_type":"init_text","stage":1,"raw_json":null}
+
+event: chunk
+data: {"content":"{\"phase\":\"initializing\",\"message\":\"Initializing... syncing skills (25%)\",\"elapsed_ms\":4506}","event_type":"progress","stage":1,"raw_json":null}
+
+event: chunk
+data: {"content":"{\"phase\":\"thinking\",\"message\":\"Thinking... (15s)\",\"elapsed_ms\":14729}","event_type":"progress","stage":1,"raw_json":null}
+
+event: chunk
+data: {"content":"{\"phase\":\"thinking\",\"message\":\"Thinking... (25s)\",\"elapsed_ms\":24729}","event_type":"progress","stage":1,"raw_json":null}
+
+event: chunk
+data: {"content":"{\"phase\":\"complete\",\"message\":\"Generating answer...\",\"elapsed_ms\":30721}","event_type":"progress","stage":1,"raw_json":null}
 
 event: chunk
 data: {"content":"{\"type\":\"system\",\"subtype\":\"init\"...}","event_type":"system_init","stage":1,"raw_json":{...}}
@@ -1889,6 +1927,7 @@ All endpoints are currently open. Authentication will be added in a future versi
 
 | Version | Date       | Changes                                    |
 | ------- | ---------- | ------------------------------------------ |
+| 1.11.0  | 2026-02-07 | Added `progress` SSE event type with structured progress phases (`starting`, `initializing`, `thinking`, `complete`). Progress events are emitted as `event: chunk` with `event_type: "progress"` and `stage: 1` (EXPANDABLE). Includes periodic elapsed-time updates every 10 seconds during the `thinking` phase. Progress events provide user feedback during the 18-261 second silence gap between query submission and answer delivery. Not persisted to database. Backward compatible -- existing clients ignore unknown event types. |
 | 1.10.0  | 2026-02-07 | Citation enrichment via DB lookup. Added `source_url`, `content_title`, and `content_type` optional fields to `SourceCitation` schema. Citations are now enriched with metadata from the `content_items` table using exact content_id match with 8-hex prefix LIKE fallback. Enables human-readable source titles and clickable URLs in the UI. |
 | 1.9.0   | 2026-02-06 | Added source citations to chat streaming metadata. New `SourceCitation` schema with `file_path`, `content_id`, and `title` fields. Added `sources` array field to `ChatStreamResultMetadata` for linking answer text to content items via extracted file path citations (backtick-wrapped UUID/filename patterns). |
 | 1.8.0   | 2026-02-05 | Added `document` content type for extracting text from uploaded documents. Supported formats: PDF (.pdf), DOCX (.docx), Markdown (.md), Plain Text (.txt). PDF extraction with structure detection (headers, paragraphs, lists). DOCX to markdown conversion. Document metadata extraction (title, author, page count). Added error codes: UNSUPPORTED_DOCUMENT_FORMAT, FILE_TOO_LARGE, DOCUMENT_EXTRACTION_FAILED. |

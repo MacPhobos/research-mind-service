@@ -46,6 +46,7 @@ from app.schemas.chat import (
     ChatStreamResultMetadata,
     ChatStreamStage,
     ChatStreamStartEvent,
+    ProgressPhase,
     SendChatMessageRequest,
     SourceCitation,
 )
@@ -589,6 +590,42 @@ def _prepare_claude_mpm_environment(workspace_path: str) -> dict[str, str]:
     return env
 
 
+def _make_progress_sse(
+    phase: ProgressPhase,
+    message: str,
+    timer: PhaseTimer,
+) -> str:
+    """Build a progress SSE string (``event: chunk\\ndata: ...\\n\\n``).
+
+    Progress events are always Stage 1 (EXPANDABLE) and are emitted as
+    ``event: chunk`` so that existing SSE consumers can parse them with
+    the same ``ChatStreamChunkEvent`` structure.
+
+    Args:
+        phase: The current progress phase.
+        message: Human-readable status description (e.g. "Thinking... (25s)").
+        timer: PhaseTimer instance used to compute elapsed_ms.
+
+    Returns:
+        Fully-formatted SSE event string ready to be yielded.
+    """
+    from app.schemas.chat import ChatStreamProgressEvent
+
+    elapsed_ms = int((time.monotonic() - timer.start) * 1000)
+    progress_event = ChatStreamProgressEvent(
+        phase=phase,
+        message=message,
+        elapsed_ms=elapsed_ms,
+    )
+    chunk_event = ChatStreamChunkEvent(
+        content=progress_event.model_dump_json(),
+        event_type=ChatStreamEventType.PROGRESS,
+        stage=ChatStreamStage.EXPANDABLE,
+        raw_json=None,
+    )
+    return f"event: chunk\ndata: {chunk_event.model_dump_json()}\n\n"
+
+
 async def stream_claude_mpm_response(
     workspace_path: str,
     user_content: str,
@@ -702,9 +739,21 @@ async def stream_claude_mpm_response(
         )
         timer.mark("subprocess_spawned")
 
+        # Progress event: Phase 1 - starting
+        yield _make_progress_sse(
+            ProgressPhase.STARTING,
+            "Starting Claude Code...",
+            timer,
+        )
+
         # Stream stdout line by line with two-stage parsing
         first_byte_logged = False
         first_stage2_logged = False
+        # Progress tracking state for 4-phase progress events
+        initializing_emitted = False
+        thinking_entered = False
+        complete_emitted = False
+        last_thinking_update_ms = 0
         try:
             while True:
                 # Check if we need to send a heartbeat
@@ -719,18 +768,68 @@ async def stream_claude_mpm_response(
                     yield f"event: heartbeat\ndata: {heartbeat_event.model_dump_json()}\n\n"
                     last_event_time = current_time
 
-                try:
-                    line = await asyncio.wait_for(
-                        process.stdout.readline(),
-                        timeout=settings.claude_mpm_timeout_seconds,
-                    )
-                except asyncio.TimeoutError:
+                # Variable timeout for silence gap detection:
+                # - Before initializing: use full configured timeout
+                # - After initializing (init_text events seen): use 5s to
+                #   detect the silence gap entrance
+                # - During thinking: use 10s for periodic elapsed updates,
+                #   but enforce the full timeout as an outer limit
+                if not initializing_emitted:
+                    readline_timeout = settings.claude_mpm_timeout_seconds
+                elif not thinking_entered:
+                    readline_timeout = 5.0  # Detect silence gap entrance
+                else:
+                    readline_timeout = 10.0  # Periodic thinking updates
+
+                # Enforce absolute timeout to prevent infinite hangs
+                total_elapsed_s = time.monotonic() - timer.start
+                if total_elapsed_s > settings.claude_mpm_timeout_seconds:
                     process.kill()
                     await process.wait()
                     raise ClaudeMpmTimeoutError(
                         f"claude-mpm response timed out after "
                         f"{settings.claude_mpm_timeout_seconds} seconds"
                     )
+
+                try:
+                    line = await asyncio.wait_for(
+                        process.stdout.readline(),
+                        timeout=readline_timeout,
+                    )
+                except asyncio.TimeoutError:
+                    if not initializing_emitted:
+                        # No init_text events yet; this is a real timeout
+                        process.kill()
+                        await process.wait()
+                        raise ClaudeMpmTimeoutError(
+                            f"claude-mpm response timed out after "
+                            f"{settings.claude_mpm_timeout_seconds} seconds"
+                        )
+
+                    # Silence gap detection / periodic thinking updates
+                    elapsed_ms = int((time.monotonic() - timer.start) * 1000)
+
+                    if not thinking_entered:
+                        # First time: silence gap has begun
+                        thinking_entered = True
+                        last_thinking_update_ms = elapsed_ms
+                        timer.mark("thinking_entered")
+                        yield _make_progress_sse(
+                            ProgressPhase.THINKING,
+                            f"Thinking... ({elapsed_ms // 1000}s)",
+                            timer,
+                        )
+                    elif elapsed_ms - last_thinking_update_ms >= 10_000:
+                        # Periodic update every 10 seconds during the gap
+                        last_thinking_update_ms = elapsed_ms
+                        yield _make_progress_sse(
+                            ProgressPhase.THINKING,
+                            f"Thinking... ({elapsed_ms // 1000}s)",
+                            timer,
+                        )
+
+                    last_event_time = time.time()
+                    continue  # Loop back to readline
 
                 if not line:
                     break
@@ -771,6 +870,17 @@ async def stream_claude_mpm_response(
                             stage.value,
                             event.get("type", "MISSING"),
                         )
+
+                        # Progress event: Phase 4 - complete
+                        # First event after the silence gap (post-gap burst)
+                        if thinking_entered and not complete_emitted:
+                            complete_emitted = True
+                            timer.mark("progress_complete")
+                            yield _make_progress_sse(
+                                ProgressPhase.COMPLETE,
+                                "Generating answer...",
+                                timer,
+                            )
 
                         if stage == ChatStreamStage.EXPANDABLE:
                             # Stage 1: System events go to expandable (NOT persisted)
@@ -872,6 +982,33 @@ async def stream_claude_mpm_response(
                     # Plain text mode (initialization) - Stage 1 (NOT persisted)
                     # Collect text as fallback for content persistence
                     all_text_output.append(line_str)
+
+                    # Progress event: Phase 2 - initializing
+                    # Detect skill sync or "Starting Claude Code..." in init_text
+                    if not initializing_emitted:
+                        if (
+                            "Syncing skill files" in line_str
+                            or "Starting Claude Code" in line_str
+                            or "Launching Claude" in line_str
+                        ):
+                            initializing_emitted = True
+                            timer.mark("initializing_detected")
+                            # Parse sync percentage for detailed message
+                            sync_match = re.search(
+                                r"Syncing skill files \d+/\d+ \((\d+)%\)",
+                                line_str,
+                            )
+                            if sync_match:
+                                pct = sync_match.group(1)
+                                init_msg = f"Initializing... syncing skills ({pct}%)"
+                            else:
+                                init_msg = "Initializing environment..."
+                            yield _make_progress_sse(
+                                ProgressPhase.INITIALIZING,
+                                init_msg,
+                                timer,
+                            )
+
                     chunk_event = ChatStreamChunkEvent(
                         content=line_str,
                         event_type=ChatStreamEventType.INIT_TEXT,
