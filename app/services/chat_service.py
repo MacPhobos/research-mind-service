@@ -257,8 +257,18 @@ def complete_message(
     content: str,
     token_count: int | None = None,
     duration_ms: int | None = None,
+    metadata_json: dict[str, Any] | None = None,
 ) -> ChatMessage:
-    """Mark a message as completed with final content and stats."""
+    """Mark a message as completed with final content and stats.
+
+    Args:
+        db: Database session.
+        message: The ChatMessage ORM instance to update.
+        content: Final assistant response text.
+        token_count: Output token count from the LLM response.
+        duration_ms: Total response duration in milliseconds.
+        metadata_json: Optional metadata dict (includes enriched sources/citations).
+    """
     from datetime import datetime, timezone
 
     message.content = content
@@ -266,15 +276,18 @@ def complete_message(
     message.completed_at = datetime.now(timezone.utc)
     message.token_count = token_count
     message.duration_ms = duration_ms
+    if metadata_json is not None:
+        message.metadata_json = metadata_json
 
     db.commit()
     db.refresh(message)
 
     logger.info(
-        "Completed message %s (tokens=%s, duration=%sms)",
+        "Completed message %s (tokens=%s, duration=%sms, has_metadata=%s)",
         message.message_id,
         token_count,
         duration_ms,
+        metadata_json is not None,
     )
 
     return message

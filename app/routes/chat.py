@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import AsyncGenerator
+from typing import Any
 
 from datetime import datetime, timezone
 
@@ -230,6 +231,7 @@ async def stream_chat_response(
         final_content = ""
         final_token_count: int | None = None
         final_duration_ms: int | None = None
+        final_metadata: dict[str, Any] | None = None
         error_occurred = False
         error_message: str | None = None
 
@@ -341,6 +343,9 @@ async def stream_chat_response(
                                         )
                                         # Continue with unenriched event
 
+                                # Capture metadata (enriched or raw) for DB persistence
+                                final_metadata = complete_data.get("metadata")
+
                                 break
                     except json.JSONDecodeError as e:
                         logger.error(
@@ -419,6 +424,7 @@ async def stream_chat_response(
                                 final_content,
                                 token_count=final_token_count,
                                 duration_ms=final_duration_ms,
+                                metadata_json=final_metadata,
                             )
 
                     # Also mark the user message as completed
