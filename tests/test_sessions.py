@@ -337,6 +337,16 @@ def fake_monorepo_root(tmp_path: Path) -> Path:
     (refs / "example.md").write_text("# Example Reference")
     (refs / ".etag_cache.json").write_text('{"etag": "nested789"}')
 
+    # universal-debugging-systematic-debugging: has skill.md only
+    debug_skill = skills_root / "universal-debugging-systematic-debugging"
+    debug_skill.mkdir(parents=True)
+    (debug_skill / "skill.md").write_text("# Systematic Debugging\nTest content.")
+
+    # toolchains-ai-techniques-session-compression: has skill.md only
+    compression_skill = skills_root / "toolchains-ai-techniques-session-compression"
+    compression_skill.mkdir(parents=True)
+    (compression_skill / "skill.md").write_text("# Session Compression\nTest content.")
+
     return tmp_path / "fake_monorepo"
 
 
@@ -346,8 +356,8 @@ def fake_monorepo_root(tmp_path: Path) -> Path:
 
 
 class TestClaudeMpmConfig:
-    def test_config_lists_three_skills(self, tmp_path: Path):
-        """Verify configuration.yaml has the 3 skill names in agent_referenced."""
+    def test_config_lists_five_skills(self, tmp_path: Path):
+        """Verify configuration.yaml has the 5 skill names in agent_referenced."""
         from app.services.session_service import create_sandbox_claude_mpm_config
 
         sandbox = tmp_path / "sandbox"
@@ -362,6 +372,13 @@ class TestClaudeMpmConfig:
         assert "- json-data-handling" in content
         assert "- mcp" in content
         assert "- writing-plans" in content
+        assert "- systematic-debugging" in content
+        assert "- session-compression" in content
+
+        # Verify exactly 5 skills listed
+        lines = content.split("\n")
+        skill_count = sum(1 for line in lines if line.strip().startswith("- "))
+        assert skill_count == 5
 
     def test_config_disables_auto_deploy(self, tmp_path: Path):
         """Verify auto_deploy is false and agent_sync is disabled."""
@@ -382,10 +399,8 @@ class TestClaudeMpmConfig:
 
 
 class TestDeployMinimalSandboxSkills:
-    def test_copies_all_three_skill_dirs(
-        self, tmp_path: Path, fake_monorepo_root: Path
-    ):
-        """All three skill directories should be copied into the sandbox."""
+    def test_copies_all_five_skill_dirs(self, tmp_path: Path, fake_monorepo_root: Path):
+        """All five skill directories should be copied into the sandbox."""
         from app.services.session_service import deploy_minimal_sandbox_skills
 
         sandbox = tmp_path / "sandbox"
@@ -398,6 +413,12 @@ class TestDeployMinimalSandboxSkills:
         assert (skills_dir / "universal-data-json-data-handling").is_dir()
         assert (skills_dir / "toolchains-ai-protocols-mcp").is_dir()
         assert (skills_dir / "universal-collaboration-writing-plans").is_dir()
+        assert (skills_dir / "universal-debugging-systematic-debugging").is_dir()
+        assert (skills_dir / "toolchains-ai-techniques-session-compression").is_dir()
+
+        # Verify exactly 5 skill directories
+        skill_dirs = [d for d in skills_dir.iterdir() if d.is_dir()]
+        assert len(skill_dirs) == 5
 
     def test_skill_files_are_copied(self, tmp_path: Path, fake_monorepo_root: Path):
         """Verify actual skill files (skill.md, metadata.json) are present."""
@@ -492,10 +513,12 @@ class TestDeployMinimalSandboxSkills:
             deploy_minimal_sandbox_skills(sandbox)
 
         skills_dir = sandbox / ".claude" / "skills"
-        # Two skills should exist, one should be missing
+        # Four skills should exist, one should be missing
         assert (skills_dir / "universal-data-json-data-handling").is_dir()
         assert not (skills_dir / "toolchains-ai-protocols-mcp").exists()
         assert (skills_dir / "universal-collaboration-writing-plans").is_dir()
+        assert (skills_dir / "universal-debugging-systematic-debugging").is_dir()
+        assert (skills_dir / "toolchains-ai-techniques-session-compression").is_dir()
 
 
 # ------------------------------------------------------------------
@@ -522,6 +545,8 @@ class TestCreateSessionDeploysSkills:
         assert (skills_dir / "universal-data-json-data-handling").is_dir()
         assert (skills_dir / "toolchains-ai-protocols-mcp").is_dir()
         assert (skills_dir / "universal-collaboration-writing-plans").is_dir()
+        assert (skills_dir / "universal-debugging-systematic-debugging").is_dir()
+        assert (skills_dir / "toolchains-ai-techniques-session-compression").is_dir()
 
     def test_create_session_excludes_etag_cache(
         self, client: TestClient, fake_monorepo_root: Path
@@ -541,3 +566,386 @@ class TestCreateSessionDeploysSkills:
         assert (
             etag_files == []
         ), f"Found unexpected .etag_cache.json files: {etag_files}"
+
+
+# ------------------------------------------------------------------
+# migrate_sandbox_config unit tests (Plan 02)
+# ------------------------------------------------------------------
+
+
+class TestMigrateSandboxConfig:
+    def test_already_minimal_returns_false(
+        self, tmp_path: Path, fake_monorepo_root: Path
+    ):
+        """A sandbox with 5 correct skills and no agents returns False."""
+        from app.services.session_service import (
+            create_sandbox_claude_md,
+            create_sandbox_claude_mpm_config,
+            deploy_minimal_sandbox_skills,
+            migrate_sandbox_config,
+        )
+
+        sandbox = tmp_path / "sandbox"
+        sandbox.mkdir()
+        create_sandbox_claude_md(sandbox)
+        create_sandbox_claude_mpm_config(sandbox)
+
+        with patch("app.services.session_service._MONOREPO_ROOT", fake_monorepo_root):
+            deploy_minimal_sandbox_skills(sandbox)
+
+        # Sandbox is already minimal
+        with patch("app.services.session_service._MONOREPO_ROOT", fake_monorepo_root):
+            result = migrate_sandbox_config(sandbox)
+
+        assert result is False
+
+    def test_legacy_sandbox_migrated(self, tmp_path: Path, fake_monorepo_root: Path):
+        """A legacy sandbox with agents + 60 skills should be migrated."""
+        from app.services.session_service import (
+            create_sandbox_claude_md,
+            migrate_sandbox_config,
+        )
+
+        sandbox = tmp_path / "sandbox"
+        sandbox.mkdir()
+        create_sandbox_claude_md(sandbox)
+
+        # Create legacy agents directory with fake agent files
+        agents_dir = sandbox / ".claude" / "agents"
+        agents_dir.mkdir(parents=True)
+        (agents_dir / "research.md").write_text("# Research Agent\n" * 100)
+        (agents_dir / "engineer.md").write_text("# Engineer Agent\n" * 50)
+        (agents_dir / "qa.md").write_text("# QA Agent\n" * 50)
+
+        # Create legacy skills directory with many fake skills
+        skills_dir = sandbox / ".claude" / "skills"
+        skills_dir.mkdir(parents=True)
+        for i in range(60):
+            skill_dir = skills_dir / f"legacy-skill-{i}"
+            skill_dir.mkdir()
+            (skill_dir / "skill.md").write_text(f"# Legacy Skill {i}")
+
+        # Create legacy configuration.yaml with 52 skills
+        config_dir = sandbox / ".claude-mpm"
+        config_dir.mkdir(parents=True)
+        skill_lines = "\n".join(f"    - legacy-skill-{i}" for i in range(52))
+        (config_dir / "configuration.yaml").write_text(
+            "agent_sync:\n"
+            "  enabled: false\n"
+            "\n"
+            "skills:\n"
+            "  auto_deploy: false\n"
+            "  agent_referenced:\n"
+            f"{skill_lines}\n"
+            "  user_defined: []\n"
+        )
+
+        # Migrate
+        with patch("app.services.session_service._MONOREPO_ROOT", fake_monorepo_root):
+            result = migrate_sandbox_config(sandbox)
+
+        assert result is True
+
+        # Agents should be removed
+        assert not agents_dir.exists()
+
+        # Skills should be replaced with 5 minimal skills
+        assert skills_dir.is_dir()
+        skill_dirs = sorted(d.name for d in skills_dir.iterdir() if d.is_dir())
+        assert len(skill_dirs) == 5
+        assert "universal-data-json-data-handling" in skill_dirs
+        assert "toolchains-ai-protocols-mcp" in skill_dirs
+        assert "universal-collaboration-writing-plans" in skill_dirs
+        assert "universal-debugging-systematic-debugging" in skill_dirs
+        assert "toolchains-ai-techniques-session-compression" in skill_dirs
+
+        # Configuration should be updated
+        config_content = (config_dir / "configuration.yaml").read_text()
+        lines = config_content.split("\n")
+        config_skill_count = sum(1 for line in lines if line.strip().startswith("- "))
+        assert config_skill_count == 5
+
+    def test_partial_state_agents_only(self, tmp_path: Path, fake_monorepo_root: Path):
+        """Sandbox with agents but correct skills should only remove agents."""
+        from app.services.session_service import (
+            create_sandbox_claude_mpm_config,
+            deploy_minimal_sandbox_skills,
+            migrate_sandbox_config,
+        )
+
+        sandbox = tmp_path / "sandbox"
+        sandbox.mkdir()
+        create_sandbox_claude_mpm_config(sandbox)
+
+        with patch("app.services.session_service._MONOREPO_ROOT", fake_monorepo_root):
+            deploy_minimal_sandbox_skills(sandbox)
+
+        # Add agents directory (simulating claude-mpm sync)
+        agents_dir = sandbox / ".claude" / "agents"
+        agents_dir.mkdir(parents=True)
+        (agents_dir / "research.md").write_text("# Research Agent")
+
+        with patch("app.services.session_service._MONOREPO_ROOT", fake_monorepo_root):
+            result = migrate_sandbox_config(sandbox)
+
+        assert result is True
+        assert not agents_dir.exists()
+        # Skills should still be 5
+        skills_dir = sandbox / ".claude" / "skills"
+        skill_dirs = [d for d in skills_dir.iterdir() if d.is_dir()]
+        assert len(skill_dirs) == 5
+
+    def test_data_preservation(self, tmp_path: Path, fake_monorepo_root: Path):
+        """Migration must preserve CLAUDE.md, .mcp.json, and content data."""
+        from app.services.session_service import migrate_sandbox_config
+
+        sandbox = tmp_path / "sandbox"
+        sandbox.mkdir()
+
+        # Create files that must be preserved
+        (sandbox / "CLAUDE.md").write_text("# Research Assistant\nCustom content.")
+        (sandbox / ".mcp.json").write_text('{"tools": ["vector-search"]}')
+        content_dir = sandbox / "content"
+        content_dir.mkdir()
+        (content_dir / "doc.md").write_text("# Important Document")
+        vector_dir = sandbox / ".mcp-vector-search"
+        vector_dir.mkdir()
+        (vector_dir / "index.bin").write_bytes(b"\x00\x01\x02\x03")
+        settings_path = sandbox / ".claude" / "settings.local.json"
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+        settings_path.write_text('{"key": "value"}')
+
+        # Create legacy agents + wrong skill count
+        agents_dir = sandbox / ".claude" / "agents"
+        agents_dir.mkdir(parents=True)
+        (agents_dir / "research.md").write_text("# Agent")
+        skills_dir = sandbox / ".claude" / "skills"
+        skills_dir.mkdir(parents=True, exist_ok=True)
+        for i in range(10):
+            d = skills_dir / f"old-skill-{i}"
+            d.mkdir()
+            (d / "skill.md").write_text(f"# Skill {i}")
+
+        # Create legacy config
+        config_dir = sandbox / ".claude-mpm"
+        config_dir.mkdir(parents=True)
+        (config_dir / "configuration.yaml").write_text(
+            "agent_sync:\n  enabled: false\nskills:\n  auto_deploy: false\n"
+            "  agent_referenced:\n"
+            + "\n".join(f"    - old-skill-{i}" for i in range(10))
+            + "\n  user_defined: []\n"
+        )
+        (config_dir / "config.json").write_text('{"project": "test"}')
+
+        # Migrate
+        with patch("app.services.session_service._MONOREPO_ROOT", fake_monorepo_root):
+            result = migrate_sandbox_config(sandbox)
+
+        assert result is True
+
+        # Verify preserved files
+        assert (
+            sandbox / "CLAUDE.md"
+        ).read_text() == "# Research Assistant\nCustom content."
+        assert (sandbox / ".mcp.json").read_text() == '{"tools": ["vector-search"]}'
+        assert (content_dir / "doc.md").read_text() == "# Important Document"
+        assert (vector_dir / "index.bin").read_bytes() == b"\x00\x01\x02\x03"
+        assert settings_path.read_text() == '{"key": "value"}'
+        assert (config_dir / "config.json").read_text() == '{"project": "test"}'
+
+
+# ------------------------------------------------------------------
+# create_sandbox_pm_instructions unit tests (Plan 04)
+# ------------------------------------------------------------------
+
+
+class TestCreateSandboxPmInstructions:
+    def test_creates_deployed_file(self, tmp_path: Path):
+        """Verify PM_INSTRUCTIONS_DEPLOYED.md is created in .claude-mpm/."""
+        from app.services.session_service import create_sandbox_pm_instructions
+
+        sandbox = tmp_path / "sandbox"
+        sandbox.mkdir()
+        create_sandbox_pm_instructions(sandbox)
+
+        deployed_path = sandbox / ".claude-mpm" / "PM_INSTRUCTIONS_DEPLOYED.md"
+        assert deployed_path.is_file()
+
+    def test_content_is_minimal(self, tmp_path: Path):
+        """Verify the file content is much smaller than the ~56KB default."""
+        from app.services.session_service import create_sandbox_pm_instructions
+
+        sandbox = tmp_path / "sandbox"
+        sandbox.mkdir()
+        create_sandbox_pm_instructions(sandbox)
+
+        deployed_path = sandbox / ".claude-mpm" / "PM_INSTRUCTIONS_DEPLOYED.md"
+        content = deployed_path.read_text()
+
+        # Minimal file should be well under 2000 bytes (vs ~56KB default)
+        assert len(content) < 2000
+        assert "Q&A Research Assistant" in content
+        assert "mcp-vector-search" in content
+
+    def test_version_comment_present(self, tmp_path: Path):
+        """Verify the version comment is present and high enough to override source."""
+        from app.services.session_service import create_sandbox_pm_instructions
+
+        sandbox = tmp_path / "sandbox"
+        sandbox.mkdir()
+        create_sandbox_pm_instructions(sandbox)
+
+        deployed_path = sandbox / ".claude-mpm" / "PM_INSTRUCTIONS_DEPLOYED.md"
+        content = deployed_path.read_text()
+
+        assert "PM_INSTRUCTIONS_VERSION: 9999" in content
+
+    def test_creates_directory_if_missing(self, tmp_path: Path):
+        """Verify .claude-mpm directory is created if it doesn't exist."""
+        from app.services.session_service import create_sandbox_pm_instructions
+
+        sandbox = tmp_path / "sandbox"
+        sandbox.mkdir()
+        # No .claude-mpm directory exists yet
+        assert not (sandbox / ".claude-mpm").exists()
+
+        create_sandbox_pm_instructions(sandbox)
+
+        assert (sandbox / ".claude-mpm").is_dir()
+        assert (sandbox / ".claude-mpm" / "PM_INSTRUCTIONS_DEPLOYED.md").is_file()
+
+    def test_idempotent(self, tmp_path: Path):
+        """Calling twice should produce the same result."""
+        from app.services.session_service import create_sandbox_pm_instructions
+
+        sandbox = tmp_path / "sandbox"
+        sandbox.mkdir()
+        create_sandbox_pm_instructions(sandbox)
+        content1 = (sandbox / ".claude-mpm" / "PM_INSTRUCTIONS_DEPLOYED.md").read_text()
+
+        create_sandbox_pm_instructions(sandbox)
+        content2 = (sandbox / ".claude-mpm" / "PM_INSTRUCTIONS_DEPLOYED.md").read_text()
+
+        assert content1 == content2
+
+
+# ------------------------------------------------------------------
+# Integration: create_session deploys minimal PM_INSTRUCTIONS (Plan 04)
+# ------------------------------------------------------------------
+
+
+class TestCreateSessionDeploysPmInstructions:
+    def test_create_session_creates_minimal_pm_instructions(
+        self, client: TestClient, fake_monorepo_root: Path
+    ):
+        """Creating a session should write minimal PM_INSTRUCTIONS_DEPLOYED.md."""
+        with patch("app.services.session_service._MONOREPO_ROOT", fake_monorepo_root):
+            response = client.post(
+                "/api/v1/sessions/",
+                json={"name": "PM Instructions Session"},
+            )
+        assert response.status_code == 201
+        workspace = Path(response.json()["workspace_path"])
+
+        deployed_path = workspace / ".claude-mpm" / "PM_INSTRUCTIONS_DEPLOYED.md"
+        assert deployed_path.is_file()
+
+        content = deployed_path.read_text()
+        assert len(content) < 2000
+        assert "Q&A Research Assistant" in content
+        assert "PM_INSTRUCTIONS_VERSION: 9999" in content
+
+
+# ------------------------------------------------------------------
+# migrate_sandbox_config replaces large PM_INSTRUCTIONS (Plan 04)
+# ------------------------------------------------------------------
+
+
+class TestMigratePmInstructions:
+    def test_large_deployed_file_replaced(
+        self, tmp_path: Path, fake_monorepo_root: Path
+    ):
+        """Migration should replace a large PM_INSTRUCTIONS_DEPLOYED.md."""
+        from app.services.session_service import (
+            create_sandbox_claude_md,
+            create_sandbox_claude_mpm_config,
+            deploy_minimal_sandbox_skills,
+            migrate_sandbox_config,
+        )
+
+        sandbox = tmp_path / "sandbox"
+        sandbox.mkdir()
+        create_sandbox_claude_md(sandbox)
+        create_sandbox_claude_mpm_config(sandbox)
+
+        with patch("app.services.session_service._MONOREPO_ROOT", fake_monorepo_root):
+            deploy_minimal_sandbox_skills(sandbox)
+
+        # Simulate a large PM_INSTRUCTIONS_DEPLOYED.md (like the ~56KB default)
+        deployed_path = sandbox / ".claude-mpm" / "PM_INSTRUCTIONS_DEPLOYED.md"
+        deployed_path.write_text("# Full PM Instructions\n" * 500)
+        assert deployed_path.stat().st_size > 2000
+
+        with patch("app.services.session_service._MONOREPO_ROOT", fake_monorepo_root):
+            result = migrate_sandbox_config(sandbox)
+
+        assert result is True
+        content = deployed_path.read_text()
+        assert len(content) < 2000
+        assert "Q&A Research Assistant" in content
+
+    def test_small_deployed_file_not_replaced(
+        self, tmp_path: Path, fake_monorepo_root: Path
+    ):
+        """Migration should NOT replace an already-minimal PM_INSTRUCTIONS_DEPLOYED.md."""
+        from app.services.session_service import (
+            create_sandbox_claude_md,
+            create_sandbox_claude_mpm_config,
+            create_sandbox_pm_instructions,
+            deploy_minimal_sandbox_skills,
+            migrate_sandbox_config,
+        )
+
+        sandbox = tmp_path / "sandbox"
+        sandbox.mkdir()
+        create_sandbox_claude_md(sandbox)
+        create_sandbox_claude_mpm_config(sandbox)
+        create_sandbox_pm_instructions(sandbox)
+
+        with patch("app.services.session_service._MONOREPO_ROOT", fake_monorepo_root):
+            deploy_minimal_sandbox_skills(sandbox)
+
+        # Sandbox is already fully minimal (including PM_INSTRUCTIONS)
+        with patch("app.services.session_service._MONOREPO_ROOT", fake_monorepo_root):
+            result = migrate_sandbox_config(sandbox)
+
+        assert result is False
+
+    def test_missing_deployed_file_not_error(
+        self, tmp_path: Path, fake_monorepo_root: Path
+    ):
+        """Migration should not fail if PM_INSTRUCTIONS_DEPLOYED.md doesn't exist."""
+        from app.services.session_service import (
+            create_sandbox_claude_md,
+            create_sandbox_claude_mpm_config,
+            deploy_minimal_sandbox_skills,
+            migrate_sandbox_config,
+        )
+
+        sandbox = tmp_path / "sandbox"
+        sandbox.mkdir()
+        create_sandbox_claude_md(sandbox)
+        create_sandbox_claude_mpm_config(sandbox)
+
+        with patch("app.services.session_service._MONOREPO_ROOT", fake_monorepo_root):
+            deploy_minimal_sandbox_skills(sandbox)
+
+        # No PM_INSTRUCTIONS_DEPLOYED.md exists
+        deployed_path = sandbox / ".claude-mpm" / "PM_INSTRUCTIONS_DEPLOYED.md"
+        assert not deployed_path.exists()
+
+        with patch("app.services.session_service._MONOREPO_ROOT", fake_monorepo_root):
+            result = migrate_sandbox_config(sandbox)
+
+        # Should be False because everything else is already minimal
+        assert result is False

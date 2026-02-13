@@ -691,6 +691,11 @@ async def stream_claude_mpm_response(
     all_text_output: list[str] = []
 
     try:
+        # Lazy migration: ensure sandbox has minimal config before spawning
+        from app.services.session_service import migrate_sandbox_config
+
+        migrate_sandbox_config(workspace_path)
+
         # Get claude-mpm path
         claude_mpm_path = _get_claude_mpm_path()
         timer.mark("cli_path_resolved")
